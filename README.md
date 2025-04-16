@@ -2,6 +2,8 @@
 
 **RhymeAI** is an AI-powered event host platform that enables users to create custom emcee experiences for events. With dynamic voice customization, script support, and real-time interaction, RhymeAI transforms traditional hosting into a smart and seamless experience.
 
+![RhymeAI Preview](public/create-event.png)
+
 ---
 
 ## 🚀 Features

@@ -62,7 +62,7 @@ export interface TTSVoiceParams {
  */
 export function mapVoiceParams(params: Partial<TTSVoiceParams>): string {
   // This is a simplified example - would be replaced with actual provider mapping logic
-  const voiceMap = {
+  const voiceMap: { [key: string]: string } = {
     male_professional_american: "en-US-Neural2-D",
     female_professional_american: "en-US-Neural2-F",
     male_energetic_british: "en-GB-Neural2-B",

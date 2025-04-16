@@ -181,10 +181,10 @@ Focus on providing practical, actionable assistance for creating effective event
     // Optimized Gemini model configuration for script generation
     const result = streamText({
       model: google("gemini-1.5-flash", {}),
-      tools: {
-        store_event_data: storeEventDataTool,
-        generate_script: generateScriptTool,
-      },
+      // tools: {
+      //   store_event_data: storeEventDataTool,
+      //   generate_script: generateScriptTool,
+      // },
       messages: messagesWithSystem,
       temperature: 0.5, // Lower temperature for more focused responses
       maxTokens: 1500, // Increased token limit for more comprehensive scripts
