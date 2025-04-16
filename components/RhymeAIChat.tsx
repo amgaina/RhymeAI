@@ -23,6 +23,7 @@ import {
 import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { convertToSSML, TTSVoiceParams } from "@/lib/tts-utils";
 
 interface RhymeAIChatProps {
   title?: string;
@@ -37,6 +38,8 @@ interface RhymeAIChatProps {
     additionalInfo?: Record<string, any>;
   };
   onEventDataCollected?: (data: any) => void;
+  onScriptGenerated?: (script: any) => void;
+  onVoiceSelected?: (voiceParams: TTSVoiceParams) => void;
 }
 
 export function RhymeAIChat({
@@ -60,6 +63,8 @@ export function RhymeAIChat({
     contextType: "event-creation",
   },
   onEventDataCollected,
+  onScriptGenerated,
+  onVoiceSelected,
 }: RhymeAIChatProps) {
   const [collectedFields, setCollectedFields] = useState<
     Record<string, boolean>
@@ -67,6 +72,9 @@ export function RhymeAIChat({
   const [isDataComplete, setIsDataComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [scriptData, setScriptData] = useState<any>(null);
+  const [voiceParams, setVoiceParams] = useState<Partial<TTSVoiceParams>>({});
+  const [syncToken, setSyncToken] = useState<string | null>(null);
 
   const {
     messages,
@@ -103,11 +111,62 @@ export function RhymeAIChat({
         );
         setError(`API error: ${response.status} ${response.statusText}`);
       }
+
+      // Extract sync token from response headers for component coordination
+      const token = response.headers.get("X-RhymeAI-Sync-Token");
+      if (token) {
+        setSyncToken(token);
+      }
     },
     onFinish: (message) => {
       // Process the completed message to extract fields
       if (message.content) {
         extractFieldInfo(message.content);
+      }
+
+      // Try to parse tool calls from the message
+      try {
+        if (message.toolCalls && message.toolCalls.length > 0) {
+          message.toolCalls.forEach((toolCall) => {
+            if (toolCall.name === "store_event_data" && onEventDataCollected) {
+              const eventData = JSON.parse(toolCall.args);
+              onEventDataCollected(eventData);
+
+              // Extract voice parameters if available
+              if (eventData.voicePreference) {
+                setVoiceParams(eventData.voicePreference);
+                onVoiceSelected?.(eventData.voicePreference);
+              }
+            }
+
+            if (toolCall.name === "generate_script" && onScriptGenerated) {
+              const scriptData = JSON.parse(toolCall.args);
+              setScriptData(scriptData);
+              onScriptGenerated(scriptData);
+            }
+          });
+        }
+
+        // Try to extract data from content if no tool calls
+        if (
+          !message.toolCalls &&
+          eventContext?.contextType === "script-generation"
+        ) {
+          const content = message.content;
+          // Look for JSON format in the response
+          const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
+          if (jsonMatch && jsonMatch[1]) {
+            try {
+              const scriptData = JSON.parse(jsonMatch[1]);
+              setScriptData(scriptData);
+              onScriptGenerated?.(scriptData);
+            } catch (e) {
+              console.error("Failed to parse script JSON:", e);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Error processing AI response:", e);
       }
     },
     onError: (err) => {
@@ -249,6 +308,59 @@ export function RhymeAIChat({
           ],
         },
       ]);
+    }
+  };
+
+  // Generate SSML when script data changes
+  useEffect(() => {
+    if (scriptData && eventContext?.contextType === "script-generation") {
+      try {
+        const ssml = convertToSSML(scriptData);
+        console.log("Generated SSML for TTS:", ssml);
+        // You would typically send this SSML to your TTS API here
+      } catch (e) {
+        console.error("Failed to generate SSML:", e);
+      }
+    }
+  }, [scriptData, eventContext?.contextType]);
+
+  // Function to generate audio from the script
+  const generateAudio = async () => {
+    if (!scriptData) return;
+
+    try {
+      const ssml = convertToSSML(scriptData);
+
+      // Example API call to a TTS service (implementation depends on your TTS provider)
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ssml,
+          voiceParams,
+          syncToken,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("TTS generation failed");
+      }
+
+      const audioData = await response.blob();
+
+      // Create an audio element to play the generated speech
+      const audioUrl = URL.createObjectURL(audioData);
+      const audio = new Audio(audioUrl);
+      audio.play();
+
+      // Clean up URL object after audio finishes playing
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+      };
+    } catch (error) {
+      console.error("Failed to generate TTS audio:", error);
     }
   };
 
@@ -637,6 +749,19 @@ export function RhymeAIChat({
           >
             <CheckCircle2 className="h-4 w-4" />
             Generate Script
+          </Button>
+        </CardFooter>
+      )}
+
+      {eventContext?.contextType === "script-generation" && scriptData && (
+        <CardFooter className="flex justify-end border-t p-4 bg-muted/20">
+          <Button
+            onClick={generateAudio}
+            className="gap-2"
+            size="sm"
+            variant="default"
+          >
+            Generate Audio
           </Button>
         </CardFooter>
       )}
