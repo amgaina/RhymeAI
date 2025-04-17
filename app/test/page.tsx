@@ -1,10 +1,18 @@
 "use client";
+<<<<<<< HEAD
 import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { RhymeAIChat } from "@/components/RhymeAIChat";
 
 // Client component that uses useSearchParams
 function TestPageContent() {
+=======
+import { useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { RhymeAIChat } from "@/components/RhymeAIChat";
+
+export default function TestPage() {
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
   const searchParams = useSearchParams();
   const router = useRouter();
   const mode = searchParams.get("mode");
@@ -35,6 +43,7 @@ function TestPageContent() {
     </div>
   );
 }
+<<<<<<< HEAD
 
 // Main page component with Suspense boundary
 export default function TestPage() {
@@ -44,3 +53,5 @@ export default function TestPage() {
     </Suspense>
   );
 }
+=======
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)

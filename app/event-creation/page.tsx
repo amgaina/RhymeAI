@@ -27,7 +27,10 @@ import {
   ArrowLeft,
   Settings,
   Loader2,
+<<<<<<< HEAD
   Pause,
+=======
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
@@ -80,6 +83,7 @@ export default function EventCreation() {
   // For file upload handling
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
+<<<<<<< HEAD
   // Text-to-speech state
   const [availableVoices, setAvailableVoices] = useState<
     SpeechSynthesisVoice[]
@@ -91,6 +95,8 @@ export default function EventCreation() {
     useState<SpeechSynthesisUtterance | null>(null);
   const [ttsSupported, setTtsSupported] = useState(true);
 
+=======
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
   // For form input handling
   const [formData, setFormData] = useState({
     eventName: "",
@@ -103,6 +109,7 @@ export default function EventCreation() {
     language: "",
   });
 
+<<<<<<< HEAD
   // Initialize speech synthesis and load available voices
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -208,6 +215,8 @@ export default function EventCreation() {
     }
   };
 
+=======
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -241,11 +250,14 @@ export default function EventCreation() {
       ...prev,
       [field]: value,
     }));
+<<<<<<< HEAD
 
     // If the voice type changes, update the selected voice
     if (field === "voiceType" && availableVoices.length > 0) {
       changeVoice(value);
     }
+=======
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
   };
 
   // Handle form submission
@@ -356,6 +368,7 @@ export default function EventCreation() {
     setTimeout(() => {
       setScriptSegments(segments);
       setIsGeneratingScript(false);
+<<<<<<< HEAD
 
       // Use TTS to announce that the script is ready
       if (ttsSupported && selectedVoice) {
@@ -363,6 +376,8 @@ export default function EventCreation() {
           "Your event script is now ready. You can review and edit each segment."
         );
       }
+=======
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
     }, 2000);
   };
 
@@ -417,6 +432,7 @@ export default function EventCreation() {
       )
     );
 
+<<<<<<< HEAD
     // Get the segment content
     const segment = scriptSegments.find((s) => s.id === segmentId);
     if (!segment) return;
@@ -489,6 +505,9 @@ export default function EventCreation() {
 
   // Simulate audio generation with timeout (fallback method)
   const simulateAudioGeneration = (segmentId: number) => {
+=======
+    // Simulate audio generation with timeout
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
     setTimeout(() => {
       setScriptSegments((prev) =>
         prev.map((segment) =>
@@ -514,11 +533,14 @@ export default function EventCreation() {
     const segment = scriptSegments.find((s) => s.audio === audioUrl);
     if (segment) {
       setSelectedSegment(segment);
+<<<<<<< HEAD
 
       // If it's a mock URL, use TTS to play the content
       if (audioUrl.startsWith("mock-audio-url")) {
         speakText(segment.content);
       }
+=======
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
     }
   };
 
@@ -920,6 +942,7 @@ You can share as much detail as you'd like - the more information you provide, t
                               title={`Preview: ${selectedSegment.type}`}
                               scriptText={selectedSegment.content}
                               audioUrl={selectedSegment.audio}
+<<<<<<< HEAD
                               onTtsPlay={
                                 selectedSegment.audio?.startsWith(
                                   "mock-audio-url"
@@ -935,6 +958,8 @@ You can share as much detail as you'd like - the more information you provide, t
                                   : undefined
                               }
                               isPlaying={isPlaying}
+=======
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
                             />
                           )}
 
@@ -1260,6 +1285,7 @@ You can share as much detail as you'd like - the more information you provide, t
                                 <SelectValue placeholder="Select voice style" />
                               </SelectTrigger>
                               <SelectContent>
+<<<<<<< HEAD
                                 {availableVoices.length > 0 ? (
                                   availableVoices.map((voice) => (
                                     <SelectItem
@@ -1326,6 +1352,25 @@ You can share as much detail as you'd like - the more information you provide, t
                                 )}
                               </div>
                             )}
+=======
+                                <SelectItem value="Professional">
+                                  Professional
+                                </SelectItem>
+                                <SelectItem value="Friendly">
+                                  Friendly & Approachable
+                                </SelectItem>
+                                <SelectItem value="Energetic">
+                                  Energetic & Enthusiastic
+                                </SelectItem>
+                                <SelectItem value="Formal">
+                                  Formal & Authoritative
+                                </SelectItem>
+                                <SelectItem value="Casual">
+                                  Casual & Relaxed
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
                           </div>
                           <div className="space-y-2">
                             <Label
@@ -1348,6 +1393,7 @@ You can share as much detail as you'd like - the more information you provide, t
                                 <SelectValue placeholder="Select language" />
                               </SelectTrigger>
                               <SelectContent>
+<<<<<<< HEAD
                                 {availableVoices.length > 0 ? (
                                   [
                                     ...new Set(
@@ -1380,6 +1426,16 @@ You can share as much detail as you'd like - the more information you provide, t
                                     </SelectItem>
                                   </>
                                 )}
+=======
+                                <SelectItem value="English">English</SelectItem>
+                                <SelectItem value="Spanish">Spanish</SelectItem>
+                                <SelectItem value="French">French</SelectItem>
+                                <SelectItem value="German">German</SelectItem>
+                                <SelectItem value="Japanese">
+                                  Japanese
+                                </SelectItem>
+                                <SelectItem value="Chinese">Chinese</SelectItem>
+>>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
                               </SelectContent>
                             </Select>
                           </div>
