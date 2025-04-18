@@ -3,7 +3,6 @@ import { streamText, Message } from "ai";
 import { v4 as uuidv4 } from "uuid";
 
 export async function POST(req: Request) {
-<<<<<<< HEAD
   try {
     // Get messages and eventContext from request body
     const { messages: incomingMessages, eventContext } = await req.json();
@@ -20,23 +19,6 @@ export async function POST(req: Request) {
     if (eventContext?.contextType === "event-creation") {
       // Streamlined event creation prompt focused on gathering essential information
       systemPrompt = `You are the RhymeAI Event Creation Assistant. Your primary task is to efficiently collect all essential information needed to generate an AI emcee script.
-=======
-  // Get messages and eventContext from request body
-  const { messages: incomingMessages, eventContext } = await req.json();
-
-  // Transform messages to include an 'id' property
-  const messages: Message[] = incomingMessages.map((msg: any) => ({
-    ...msg,
-    id: msg.id || uuidv4(), // Use existing id or generate a new one
-  }));
-
-  // Generate a context-aware system prompt based on the eventContext
-  let systemPrompt = "";
-
-  if (eventContext?.contextType === "event-creation") {
-    // Streamlined event creation prompt focused on gathering essential information
-    systemPrompt = `You are the RhymeAI Event Creation Assistant. Your primary task is to efficiently collect all essential information needed to generate an AI emcee script.
->>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
 
 ## Core Event Information to Collect:
 ${eventContext?.requiredFields?.map((field: string) => `- ${field}`).join("\n")}
@@ -49,7 +31,6 @@ ${eventContext?.requiredFields?.map((field: string) => `- ${field}`).join("\n")}
 5. Summarize the collected information before finalizing
 
 Remember: Your goal is to gather all necessary information to generate an effective emcee script for this specific event. Avoid irrelevant tangents.`;
-<<<<<<< HEAD
     } else if (eventContext?.contextType === "script-generation") {
       // Enhanced script generation prompt with TTS-ready formatting
       systemPrompt = `You are the RhymeAI Script Generation Assistant. Your sole purpose is to create professional, engaging emcee scripts for events that are optimized for text-to-speech conversion.
@@ -106,26 +87,6 @@ Format voice selection data in a structured format that can be easily processed 
     } else {
       // Default conversational prompt
       systemPrompt = `You are the RhymeAI Emcee Assistant, exclusively focused on helping create professional event scripts.
-=======
-  } else if (eventContext?.contextType === "script-generation") {
-    // Improved script generation prompt with focus on quality script creation
-    systemPrompt = `You are the RhymeAI Script Generation Assistant. Your sole purpose is to create professional, engaging emcee scripts for events.
-
-## Script Creation Guidelines:
-1. Create natural-sounding scripts that match the event type and audience
-2. Use clear, concise sentences optimized for text-to-speech
-3. Structure with proper introductions, transitions, and closings
-4. Include natural pauses (indicated with [pause]) at appropriate moments
-5. Format speaker introductions consistently
-6. Use emphasis markers [emphasis] for important points
-7. Incorporate event-specific terminology from the collected information
-8. Ensure appropriate pacing throughout the script
-
-Generate a complete, ready-to-use emcee script based on the event information provided.`;
-  } else {
-    // Default prompt focused on event script creation assistance
-    systemPrompt = `You are the RhymeAI Emcee Assistant, exclusively focused on helping create professional event scripts.
->>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
 
 Your primary functions:
 - Guide users through event information collection
@@ -134,7 +95,6 @@ Your primary functions:
 - Suggest appropriate voice tones and styles for different events
 
 Focus on providing practical, actionable assistance for creating effective event scripts.`;
-<<<<<<< HEAD
     }
 
     const SystemMessage: Message = {
@@ -221,10 +181,10 @@ Focus on providing practical, actionable assistance for creating effective event
     // Optimized Gemini model configuration for script generation
     const result = streamText({
       model: google("gemini-1.5-flash", {}),
-      // tools: {
-      //   store_event_data: storeEventDataTool,
-      //   generate_script: generateScriptTool,
-      // },
+      tools: {
+        store_event_data: storeEventDataTool,
+        generate_script: generateScriptTool,
+      },
       messages: messagesWithSystem,
       temperature: 0.5, // Lower temperature for more focused responses
       maxTokens: 1500, // Increased token limit for more comprehensive scripts
@@ -253,55 +213,4 @@ Focus on providing practical, actionable assistance for creating effective event
       }
     );
   }
-=======
-  }
-
-  const SystemMessage: Message = {
-    id: "system",
-    role: "system",
-    content: systemPrompt,
-    parts: [{ type: "text", text: systemPrompt }],
-  };
-  const systemMessage = SystemMessage as Message;
-
-  const messagesWithSystem = [systemMessage, ...messages];
-
-  // Define the store_event_data function for the tool schema
-  const storeEventDataTool = {
-    name: "store_event_data",
-    description: "Store collected event information",
-    parameters: {
-      type: "object",
-      properties: {
-        eventName: { type: "string" },
-        eventType: { type: "string" },
-        eventDate: { type: "string" },
-        eventLocation: { type: "string" },
-        audienceSize: { type: "string" },
-        speakerInfo: { type: "string" },
-        voicePreference: { type: "string" },
-        language: { type: "string" },
-      },
-      required: ["eventName", "eventType", "eventDate"],
-    },
-  };
-
-  // Optimized Gemini model configuration for script generation
-  const result = streamText({
-    model: google("gemini-1.5-flash-latest", {
-      useSearchGrounding: true,
-    }),
-    tools: {
-      store_event_data: storeEventDataTool,
-    },
-
-    messages: messagesWithSystem,
-    temperature: 0.5, // Lower temperature for more focused responses
-    maxTokens: 1500, // Increased token limit for more comprehensive scripts
-  });
-
-  return result.toDataStreamResponse({
-    sendSources: true,
-  });
->>>>>>> c2a201a (feat: add event management components including EventHeader, EventList, EventOverview, EventSettings, PresentationManager, and ScriptManager)
 }
