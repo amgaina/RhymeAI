@@ -1,148 +1,166 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Play, Pause, Volume2, SkipBack, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Play, Pause, SkipBack, SkipForward, Volume2 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import { Waveform } from "./Waveform";
 
-interface AudioPreviewProps {
-  audioUrl?: string | null;
-  title?: string;
-  scriptText?: string;
+export interface AudioPreviewProps {
+  title: string;
+  scriptText: string;
+  audioUrl: string | null | undefined;
+  onTtsPlay?: () => void;
+  onTtsStop?: () => void;
+  isPlaying?: boolean;
 }
 
 export default function AudioPreview({
-  audioUrl,
   title,
   scriptText,
+  audioUrl,
+  onTtsPlay,
+  onTtsStop,
+  isPlaying: externalIsPlaying,
 }: AudioPreviewProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [volume, setVolume] = useState(80);
-
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.8);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Initialize audio element
+  // Effect to sync with external playing state (for TTS)
   useEffect(() => {
-    if (!audioUrl) return;
+    if (externalIsPlaying !== undefined) {
+      setIsPlaying(externalIsPlaying);
+    }
+  }, [externalIsPlaying]);
 
-    // For demo purposes, we'll use a mock audio
-    const audio = new Audio();
-    audio.src = audioUrl || "https://example.com/demo-audio.mp3";
+  // Effect to create audio element
+  useEffect(() => {
+    if (audioUrl && !audioUrl.startsWith("mock-audio-url")) {
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
 
-    audio.addEventListener("loadedmetadata", () => {
-      setDuration(audio.duration || 60); // Default to 60s if duration not available
-    });
+      audio.addEventListener("timeupdate", () => {
+        setCurrentTime(audio.currentTime);
+      });
 
-    audio.addEventListener("timeupdate", () => {
-      setCurrentTime(audio.currentTime);
-    });
+      audio.addEventListener("loadedmetadata", () => {
+        setDuration(audio.duration);
+      });
 
-    audio.addEventListener("ended", () => {
-      setIsPlaying(false);
-      setCurrentTime(0);
-    });
+      audio.addEventListener("ended", () => {
+        setIsPlaying(false);
+      });
 
-    audioRef.current = audio;
+      audio.volume = volume;
 
-    return () => {
-      audio.pause();
-      audio.src = "";
-      audio.removeEventListener("loadedmetadata", () => {});
-      audio.removeEventListener("timeupdate", () => {});
-      audio.removeEventListener("ended", () => {});
-    };
-  }, [audioUrl]);
-
-  // Handle play/pause
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-
-    if (isPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current
-        .play()
-        .catch((e) => console.error("Error playing audio:", e));
+      return () => {
+        audio.pause();
+        audio.src = "";
+      };
     }
 
-    setIsPlaying(!isPlaying);
+    return undefined;
+  }, [audioUrl]);
+
+  // Update volume when changed
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  // Handle play/pause toggle
+  const togglePlayback = () => {
+    if (audioUrl?.startsWith("mock-audio-url") && (onTtsPlay || onTtsStop)) {
+      // Use TTS callbacks for mock audio
+      if (!isPlaying && onTtsPlay) {
+        onTtsPlay();
+      } else if (isPlaying && onTtsStop) {
+        onTtsStop();
+      }
+    } else if (audioRef.current) {
+      // Use actual audio element
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+    }
+
+    // Only update internal state if not controlled externally
+    if (externalIsPlaying === undefined) {
+      setIsPlaying(!isPlaying);
+    }
   };
 
-  // Handle seek
+  // Handle seeking
   const handleSeek = (value: number[]) => {
-    if (!audioRef.current) return;
-
-    const newTime = value[0];
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
+    if (audioRef.current) {
+      audioRef.current.currentTime = value[0];
+      setCurrentTime(value[0]);
+    }
   };
 
-  // Handle volume change
-  const handleVolumeChange = (value: number[]) => {
-    if (!audioRef.current) return;
-
-    const newVolume = value[0];
-    audioRef.current.volume = newVolume / 100;
-    setVolume(newVolume);
+  // Skip forward/backward
+  const skipForward = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = Math.min(
+        audioRef.current.currentTime + 10,
+        audioRef.current.duration
+      );
+    }
   };
 
-  // Format time to MM:SS
-  const formatTime = (time: number) => {
+  const skipBackward = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = Math.max(
+        audioRef.current.currentTime - 10,
+        0
+      );
+    }
+  };
+
+  // Format time display
+  const formatTime = (time: number): string => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
   };
 
   return (
-    <Card className="bg-gray-50 border shadow-sm">
-      <CardContent className="p-4">
-        {title && <h3 className="text-sm font-medium mb-2">{title}</h3>}
+    <Card className="w-full">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="p-3 bg-primary/5 rounded-md text-primary-foreground text-sm">
+          {scriptText}
+        </div>
 
-        {scriptText && (
-          <div className="mb-4 p-3 bg-white border rounded-md">
-            <p className="text-sm text-gray-700">{scriptText}</p>
-          </div>
-        )}
-
-        <div className="space-y-4">
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500">
-              {formatTime(currentTime)}
-            </span>
-            <div className="flex-1 mx-2">
-              <Slider
-                value={[currentTime]}
-                max={duration}
-                step={0.1}
-                onValueChange={handleSeek}
-                disabled={!audioUrl}
-                className="cursor-pointer"
-              />
-            </div>
-            <span className="text-xs text-gray-500">
-              {formatTime(duration)}
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center space-x-2">
               <Button
-                size="sm"
                 variant="ghost"
-                className="h-8 w-8 rounded-full p-0"
-                disabled={!audioUrl}
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={skipBackward}
+                disabled={
+                  !audioUrl ||
+                  (audioUrl.startsWith("mock-audio-url") && !onTtsPlay)
+                }
               >
                 <SkipBack className="h-4 w-4" />
               </Button>
-
               <Button
+                variant="outline"
                 size="sm"
-                variant="default"
-                className="h-9 w-9 rounded-full p-0"
-                onClick={togglePlay}
-                disabled={!audioUrl}
+                className="h-8 w-8 p-0"
+                onClick={togglePlayback}
+                disabled={!audioUrl && !onTtsPlay}
               >
                 {isPlaying ? (
                   <Pause className="h-4 w-4" />
@@ -150,27 +168,59 @@ export default function AudioPreview({
                   <Play className="h-4 w-4" />
                 )}
               </Button>
-
               <Button
-                size="sm"
                 variant="ghost"
-                className="h-8 w-8 rounded-full p-0"
-                disabled={!audioUrl}
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={skipForward}
+                disabled={
+                  !audioUrl ||
+                  (audioUrl.startsWith("mock-audio-url") && !onTtsPlay)
+                }
               >
                 <SkipForward className="h-4 w-4" />
               </Button>
             </div>
-
-            <div className="flex items-center gap-2 w-32">
-              <Volume2 className="h-4 w-4 text-gray-500" />
+            <div className="flex items-center space-x-1">
+              <Volume2 className="h-3 w-3 mr-1 text-primary-foreground/70" />
               <Slider
-                value={[volume]}
+                value={[volume * 100]}
                 max={100}
                 step={1}
-                onValueChange={handleVolumeChange}
-                className="cursor-pointer"
+                className="w-16"
+                onValueChange={(value) => setVolume(value[0] / 100)}
               />
             </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <span className="text-xs text-primary-foreground/70">
+              {formatTime(currentTime)}
+            </span>
+            <div className="flex-1">
+              {audioUrl && !audioUrl.startsWith("mock-audio-url") ? (
+                <Waveform duration={duration} currentTime={currentTime} />
+              ) : (
+                <Slider
+                  value={[currentTime]}
+                  max={duration || 60} // Use 60 seconds as default for mock audio
+                  step={0.1}
+                  onValueChange={handleSeek}
+                  disabled={!audioUrl || audioUrl.startsWith("mock-audio-url")}
+                />
+              )}
+            </div>
+            <span className="text-xs text-primary-foreground/70">
+              {formatTime(duration || 60)}
+            </span>
+          </div>
+
+          <div className="pt-1 text-xs text-center text-primary-foreground/70">
+            {audioUrl?.startsWith("mock-audio-url")
+              ? "Using text-to-speech preview"
+              : audioUrl
+              ? "Audio preview"
+              : "Generate audio to preview"}
           </div>
         </div>
       </CardContent>

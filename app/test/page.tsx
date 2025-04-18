@@ -1,9 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { RhymeAIChat } from "@/components/RhymeAIChat";
 
-export default function TestPage() {
+// Client component that uses useSearchParams
+function TestPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const mode = searchParams.get("mode");
@@ -32,5 +33,14 @@ export default function TestPage() {
         />
       </div>
     </div>
+  );
+}
+
+// Main page component with Suspense boundary
+export default function TestPage() {
+  return (
+    <Suspense fallback={<div className="p-8">Loading...</div>}>
+      <TestPageContent />
+    </Suspense>
   );
 }

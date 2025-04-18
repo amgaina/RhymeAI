@@ -27,6 +27,7 @@ import {
   ArrowLeft,
   Settings,
   Loader2,
+  Pause,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
@@ -79,6 +80,17 @@ export default function EventCreation() {
   // For file upload handling
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
+  // Text-to-speech state
+  const [availableVoices, setAvailableVoices] = useState<
+    SpeechSynthesisVoice[]
+  >([]);
+  const [selectedVoice, setSelectedVoice] =
+    useState<SpeechSynthesisVoice | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [ttsUtterance, setTtsUtterance] =
+    useState<SpeechSynthesisUtterance | null>(null);
+  const [ttsSupported, setTtsSupported] = useState(true);
+
   // For form input handling
   const [formData, setFormData] = useState({
     eventName: "",
@@ -90,6 +102,111 @@ export default function EventCreation() {
     voiceType: "",
     language: "",
   });
+
+  // Initialize speech synthesis and load available voices
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (!("speechSynthesis" in window)) {
+        console.log("Text-to-speech not supported in this browser");
+        setTtsSupported(false);
+        return;
+      }
+
+      // Set available voices when they load
+      const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          setAvailableVoices(voices);
+          // Set default voice
+          const defaultVoice =
+            voices.find((voice) => voice.default) || voices[0];
+          setSelectedVoice(defaultVoice);
+
+          // Update form data with default voice name
+          setFormData((prev) => ({
+            ...prev,
+            voiceType: defaultVoice.name,
+          }));
+        }
+      };
+
+      // Chrome loads voices asynchronously
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+      }
+
+      // Initial load of voices (works in Firefox)
+      loadVoices();
+
+      // Cleanup function to cancel any active speech when component unmounts
+      return () => {
+        window.speechSynthesis.cancel();
+      };
+    }
+  }, []);
+
+  // Play text using speech synthesis
+  const speakText = (text: string) => {
+    if (!ttsSupported || !selectedVoice) return;
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
+    // Create utterance with selected voice
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.voice = selectedVoice;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    // Set up events
+    utterance.onstart = () => setIsPlaying(true);
+    utterance.onend = () => setIsPlaying(false);
+    utterance.onerror = (event) => {
+      console.error("SpeechSynthesis error:", event);
+      setIsPlaying(false);
+    };
+
+    // Store utterance in state
+    setTtsUtterance(utterance);
+
+    // Speak the text
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Stop current speech
+  const stopSpeaking = () => {
+    if (!ttsSupported) return;
+    window.speechSynthesis.cancel();
+    setIsPlaying(false);
+  };
+
+  // Change the voice
+  const changeVoice = (voiceName: string) => {
+    const voice = availableVoices.find((v) => v.name === voiceName);
+    if (voice) {
+      setSelectedVoice(voice);
+
+      // Update form data
+      setFormData((prev) => ({
+        ...prev,
+        voiceType: voice.name,
+        language: voice.lang,
+      }));
+
+      // Update event info
+      setEventInfo((prev) => ({
+        ...prev,
+        hasVoiceSettings: true,
+        hasLanguageSettings: true,
+      }));
+
+      // If something is currently being spoken, update the voice
+      if (isPlaying && ttsUtterance) {
+        stopSpeaking();
+        speakText(ttsUtterance.text);
+      }
+    }
+  };
 
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,6 +241,11 @@ export default function EventCreation() {
       ...prev,
       [field]: value,
     }));
+
+    // If the voice type changes, update the selected voice
+    if (field === "voiceType" && availableVoices.length > 0) {
+      changeVoice(value);
+    }
   };
 
   // Handle form submission
@@ -234,6 +356,13 @@ export default function EventCreation() {
     setTimeout(() => {
       setScriptSegments(segments);
       setIsGeneratingScript(false);
+
+      // Use TTS to announce that the script is ready
+      if (ttsSupported && selectedVoice) {
+        speakText(
+          "Your event script is now ready. You can review and edit each segment."
+        );
+      }
     }, 2000);
   };
 
@@ -288,7 +417,78 @@ export default function EventCreation() {
       )
     );
 
-    // Simulate audio generation with timeout
+    // Get the segment content
+    const segment = scriptSegments.find((s) => s.id === segmentId);
+    if (!segment) return;
+
+    // For real implementation, this would call an API to generate audio
+    // For now, we'll use the browser's TTS as a placeholder
+    if (ttsSupported && selectedVoice) {
+      // Create an AudioContext to record TTS audio
+      try {
+        const audioContext = new (window.AudioContext ||
+          (window as any).webkitAudioContext)();
+        const mediaStreamDest = audioContext.createMediaStreamDestination();
+
+        // Record the TTS for demonstration purposes
+        const mediaRecorder = new MediaRecorder(mediaStreamDest.stream);
+        const audioChunks: BlobPart[] = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+          const audioUrl = URL.createObjectURL(audioBlob);
+
+          // Update segment with generated audio
+          setScriptSegments((prev) =>
+            prev.map((s) =>
+              s.id === segmentId
+                ? {
+                    ...s,
+                    status: "generated",
+                    audio: audioUrl,
+                  }
+                : s
+            )
+          );
+
+          // If all segments have audio, increase progress
+          if (
+            scriptSegments.every(
+              (s) => s.id === segmentId || s.status === "generated"
+            )
+          ) {
+            setProgress((prev) => Math.min(prev + 15, 100));
+          }
+        };
+
+        // Start recording
+        mediaRecorder.start();
+
+        // Speak the text (this is a simplified placeholder; real implementation would use an API)
+        speakText(segment.content);
+
+        // Stop recording after a few seconds
+        setTimeout(() => {
+          mediaRecorder.stop();
+        }, 5000);
+      } catch (error) {
+        console.error("Error creating audio:", error);
+
+        // Fallback to mock implementation if recording fails
+        simulateAudioGeneration(segmentId);
+      }
+    } else {
+      // Fallback to mock implementation
+      simulateAudioGeneration(segmentId);
+    }
+  };
+
+  // Simulate audio generation with timeout (fallback method)
+  const simulateAudioGeneration = (segmentId: number) => {
     setTimeout(() => {
       setScriptSegments((prev) =>
         prev.map((segment) =>
@@ -314,6 +514,11 @@ export default function EventCreation() {
     const segment = scriptSegments.find((s) => s.audio === audioUrl);
     if (segment) {
       setSelectedSegment(segment);
+
+      // If it's a mock URL, use TTS to play the content
+      if (audioUrl.startsWith("mock-audio-url")) {
+        speakText(segment.content);
+      }
     }
   };
 
@@ -715,6 +920,21 @@ You can share as much detail as you'd like - the more information you provide, t
                               title={`Preview: ${selectedSegment.type}`}
                               scriptText={selectedSegment.content}
                               audioUrl={selectedSegment.audio}
+                              onTtsPlay={
+                                selectedSegment.audio?.startsWith(
+                                  "mock-audio-url"
+                                )
+                                  ? () => speakText(selectedSegment.content)
+                                  : undefined
+                              }
+                              onTtsStop={
+                                selectedSegment.audio?.startsWith(
+                                  "mock-audio-url"
+                                )
+                                  ? stopSpeaking
+                                  : undefined
+                              }
+                              isPlaying={isPlaying}
                             />
                           )}
 
@@ -1040,23 +1260,72 @@ You can share as much detail as you'd like - the more information you provide, t
                                 <SelectValue placeholder="Select voice style" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="Professional">
-                                  Professional
-                                </SelectItem>
-                                <SelectItem value="Friendly">
-                                  Friendly & Approachable
-                                </SelectItem>
-                                <SelectItem value="Energetic">
-                                  Energetic & Enthusiastic
-                                </SelectItem>
-                                <SelectItem value="Formal">
-                                  Formal & Authoritative
-                                </SelectItem>
-                                <SelectItem value="Casual">
-                                  Casual & Relaxed
-                                </SelectItem>
+                                {availableVoices.length > 0 ? (
+                                  availableVoices.map((voice) => (
+                                    <SelectItem
+                                      key={voice.name}
+                                      value={voice.name}
+                                    >
+                                      {voice.name} ({voice.lang})
+                                    </SelectItem>
+                                  ))
+                                ) : (
+                                  <>
+                                    <SelectItem value="Professional">
+                                      Professional
+                                    </SelectItem>
+                                    <SelectItem value="Friendly">
+                                      Friendly & Approachable
+                                    </SelectItem>
+                                    <SelectItem value="Energetic">
+                                      Energetic & Enthusiastic
+                                    </SelectItem>
+                                    <SelectItem value="Formal">
+                                      Formal & Authoritative
+                                    </SelectItem>
+                                    <SelectItem value="Casual">
+                                      Casual & Relaxed
+                                    </SelectItem>
+                                  </>
+                                )}
                               </SelectContent>
                             </Select>
+
+                            {selectedVoice && (
+                              <div className="flex items-center gap-2 mt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 text-xs"
+                                  onClick={() =>
+                                    speakText(
+                                      "This is a sample of how your AI host voice will sound during the event."
+                                    )
+                                  }
+                                  disabled={isPlaying}
+                                >
+                                  {isPlaying ? (
+                                    <Pause className="h-3 w-3 mr-1" />
+                                  ) : (
+                                    <Play className="h-3 w-3 mr-1" />
+                                  )}
+                                  Test Voice
+                                </Button>
+                                {isPlaying && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 text-xs"
+                                    onClick={stopSpeaking}
+                                  >
+                                    <Pause className="h-3 w-3 mr-1" />
+                                    Stop
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <div className="space-y-2">
                             <Label
@@ -1079,14 +1348,38 @@ You can share as much detail as you'd like - the more information you provide, t
                                 <SelectValue placeholder="Select language" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="English">English</SelectItem>
-                                <SelectItem value="Spanish">Spanish</SelectItem>
-                                <SelectItem value="French">French</SelectItem>
-                                <SelectItem value="German">German</SelectItem>
-                                <SelectItem value="Japanese">
-                                  Japanese
-                                </SelectItem>
-                                <SelectItem value="Chinese">Chinese</SelectItem>
+                                {availableVoices.length > 0 ? (
+                                  [
+                                    ...new Set(
+                                      availableVoices.map((v) => v.lang)
+                                    ),
+                                  ].map((language) => (
+                                    <SelectItem key={language} value={language}>
+                                      {language}
+                                    </SelectItem>
+                                  ))
+                                ) : (
+                                  <>
+                                    <SelectItem value="English">
+                                      English
+                                    </SelectItem>
+                                    <SelectItem value="Spanish">
+                                      Spanish
+                                    </SelectItem>
+                                    <SelectItem value="French">
+                                      French
+                                    </SelectItem>
+                                    <SelectItem value="German">
+                                      German
+                                    </SelectItem>
+                                    <SelectItem value="Japanese">
+                                      Japanese
+                                    </SelectItem>
+                                    <SelectItem value="Chinese">
+                                      Chinese
+                                    </SelectItem>
+                                  </>
+                                )}
                               </SelectContent>
                             </Select>
                           </div>
