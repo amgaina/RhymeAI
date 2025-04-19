@@ -1,11 +1,9 @@
-import Link from "next/link"
 import { ArrowRight, Calendar, Globe, Mic2, Users, UserCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { CreateEventButton } from "@/components/CreateEventButton";
 
 
-
-export default function Home() {
+export default async function Home() {
   return (
     <div className="flex flex-col min-h-screen">
       {/* Hero Section */}
@@ -686,3 +684,5 @@ export default function Home() {
     </div >
   )
 }
+
+

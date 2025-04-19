@@ -6,6 +6,9 @@ import { Mic2, User } from "lucide-react"
 import Link from "next/link"
 import { ClerkProvider, SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
+import { DashboardLink } from "@/components/DashboardLink"
+
+
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -44,6 +47,7 @@ export default function RootLayout({
 
                 {/* Navigation Links */}
                 <nav className="hidden md:flex gap-20 animate-fade-in delay-100">
+                  <DashboardLink />
                   <Link
                     href="#features"
                     className="hover:text-accent transition-colors font-medium tracking-wide hover:underline underline-offset-4"
@@ -62,6 +66,7 @@ export default function RootLayout({
                   >
                     Pricing
                   </Link>
+
                 </nav>
 
                 {/* Auth Buttons */}
