@@ -70,6 +70,20 @@ CREATE TABLE "user_analytics" (
     CONSTRAINT "user_analytics_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "chat_messages" (
+    "id" SERIAL NOT NULL,
+    "event_id" INTEGER NOT NULL,
+    "user_id" TEXT NOT NULL DEFAULT (auth.jwt() ->> 'sub'::text),
+    "role" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "message_id" TEXT NOT NULL,
+    "tool_calls" JSONB,
+    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "chat_messages_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE INDEX "events_user_id_idx" ON "events"("user_id");
 
@@ -100,6 +114,18 @@ CREATE INDEX "user_analytics_event_id_idx" ON "user_analytics"("event_id");
 -- CreateIndex
 CREATE INDEX "user_analytics_accessed_at_idx" ON "user_analytics"("accessed_at");
 
+-- CreateIndex
+CREATE INDEX "chat_messages_event_id_idx" ON "chat_messages"("event_id");
+
+-- CreateIndex
+CREATE INDEX "chat_messages_user_id_idx" ON "chat_messages"("user_id");
+
+-- CreateIndex
+CREATE INDEX "chat_messages_created_at_idx" ON "chat_messages"("created_at");
+
+-- CreateIndex
+CREATE INDEX "chat_messages_message_id_idx" ON "chat_messages"("message_id");
+
 -- AddForeignKey
 ALTER TABLE "events" ADD CONSTRAINT "events_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("user_id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -111,3 +137,9 @@ ALTER TABLE "user_analytics" ADD CONSTRAINT "user_analytics_user_id_fkey" FOREIG
 
 -- AddForeignKey
 ALTER TABLE "user_analytics" ADD CONSTRAINT "user_analytics_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("event_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "chat_messages" ADD CONSTRAINT "chat_messages_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("event_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "chat_messages" ADD CONSTRAINT "chat_messages_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("user_id") ON DELETE RESTRICT ON UPDATE CASCADE;

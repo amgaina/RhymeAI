@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { VoiceSettings } from "./types";
 
 /**
@@ -40,6 +40,32 @@ export async function createEvent(formData: FormData) {
       };
     }
 
+    // Check if user exists in the database and create if not
+    const existingUser = await db.users.findUnique({
+      where: { user_id: userId },
+    });
+
+    if (!existingUser) {
+      // Get user information from Clerk
+      const user = await currentUser();
+      if (!user) {
+        throw new Error("User not found in Clerk");
+      }
+
+      // Create user in our database
+      await db.users.create({
+        data: {
+          user_id: userId,
+          name:
+            `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() ||
+            "Anonymous User",
+          email: user.emailAddresses[0]?.emailAddress,
+          avatar_url: user.imageUrl,
+        },
+      });
+    }
+
+    // Now create the event
     const event = await db.events.create({
       data: {
         title,

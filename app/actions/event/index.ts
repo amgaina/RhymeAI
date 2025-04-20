@@ -1,5 +1,3 @@
-"use server";
-
 // Re-export all event-related actions from their respective modules
 export * from "./create";
 export * from "./update";

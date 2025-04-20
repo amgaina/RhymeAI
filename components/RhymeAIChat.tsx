@@ -24,6 +24,8 @@ import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { convertToSSML, TTSVoiceParams } from "@/lib/tts-utils";
+import { saveChatMessage } from "@/app/actions/chat/save";
+import { loadChatHistory, syncChatMessages } from "@/app/actions/chat/sync";
 
 interface RhymeAIChatProps {
   title?: string;
@@ -31,6 +33,7 @@ interface RhymeAIChatProps {
   initialMessage?: string;
   placeholder?: string;
   className?: string;
+  eventId?: number; // Add eventId prop to associate chat with an event
   eventContext?: {
     purpose: string;
     requiredFields: string[];
@@ -48,6 +51,7 @@ export function RhymeAIChat({
   initialMessage = "I'm your RhymeAI Assistant, ready to help collect all the information needed for your event's emcee script.",
   placeholder = "Tell me about your event...",
   className = "",
+  eventId, // This might be undefined if we're creating a new event
   eventContext = {
     purpose: "event-creation",
     requiredFields: [
@@ -75,6 +79,10 @@ export function RhymeAIChat({
   const [scriptData, setScriptData] = useState<any>(null);
   const [voiceParams, setVoiceParams] = useState<Partial<TTSVoiceParams>>({});
   const [syncToken, setSyncToken] = useState<string | null>(null);
+  const [createdEventId, setCreatedEventId] = useState<number | undefined>(
+    eventId
+  );
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const {
     messages,
@@ -126,11 +134,19 @@ export function RhymeAIChat({
 
       // Try to parse tool calls from the message
       try {
-        if (message.toolCalls && message.toolCalls.length > 0) {
-          message.toolCalls.forEach((toolCall) => {
-            if (toolCall.name === "store_event_data" && onEventDataCollected) {
+        if (message.toolInvocations && message.toolInvocations.length > 0) {
+          message.toolInvocations.forEach((toolCall) => {
+            if (
+              toolCall.toolName === "store_event_data" &&
+              onEventDataCollected
+            ) {
               const eventData = JSON.parse(toolCall.args);
               onEventDataCollected(eventData);
+
+              // If the eventData has an ID and we don't have an eventId yet, store it
+              if (eventData.eventId && !createdEventId) {
+                setCreatedEventId(eventData.eventId);
+              }
 
               // Extract voice parameters if available
               if (eventData.voicePreference) {
@@ -139,7 +155,7 @@ export function RhymeAIChat({
               }
             }
 
-            if (toolCall.name === "generate_script" && onScriptGenerated) {
+            if (toolCall.toolName === "generate_script" && onScriptGenerated) {
               const scriptData = JSON.parse(toolCall.args);
               setScriptData(scriptData);
               onScriptGenerated(scriptData);
@@ -149,7 +165,7 @@ export function RhymeAIChat({
 
         // Try to extract data from content if no tool calls
         if (
-          !message.toolCalls &&
+          !message.toolInvocations &&
           eventContext?.contextType === "script-generation"
         ) {
           const content = message.content;
@@ -164,6 +180,17 @@ export function RhymeAIChat({
               console.error("Failed to parse script JSON:", e);
             }
           }
+        }
+
+        // Save the assistant message to database if we have an eventId
+        if (createdEventId) {
+          saveChatMessage({
+            eventId: createdEventId,
+            messageId: message.id,
+            role: "assistant",
+            content: message.content,
+            toolCalls: message.toolInvocations || undefined,
+          });
         }
       } catch (e) {
         console.error("Error processing AI response:", e);
@@ -255,19 +282,46 @@ export function RhymeAIChat({
     e.preventDefault();
     setError(null); // Clear any existing errors
 
-    // Save the current input value before submission
-    const currentInput = input;
-
     try {
+      // Save the user message to database if we have an eventId
+      if (createdEventId && input.trim()) {
+        // Generate a temporary ID for the message
+        const messageId = `user-${Date.now()}`;
+
+        // Save the message to the database
+        await saveChatMessage({
+          eventId: createdEventId,
+          messageId: messageId,
+          role: "user",
+          content: input,
+        });
+      }
+
       await handleSubmit(e);
     } catch (err) {
       console.error("Error submitting message:", err);
       setError("Failed to send message. Please try again.");
-
-      // Add retry button functionality by keeping the input value
-      // The retry will happen when the user clicks submit again with the same input
     }
   };
+
+  // Update createdEventId whenever eventId prop changes
+  useEffect(() => {
+    if (eventId && !createdEventId) {
+      setCreatedEventId(eventId);
+    }
+  }, [eventId, createdEventId]);
+
+  // Save initial message to database if we have an eventId
+  useEffect(() => {
+    if (createdEventId && initialMessage && messages.length === 1) {
+      saveChatMessage({
+        eventId: createdEventId,
+        messageId: messages[0].id,
+        role: "assistant",
+        content: initialMessage,
+      });
+    }
+  }, [createdEventId, initialMessage, messages]);
 
   // Generate script when all data is collected
   const handleGenerateScript = () => {
@@ -293,10 +347,12 @@ export function RhymeAIChat({
       onEventDataCollected(eventData);
 
       // Add a message to transition to script generation
+      // Use a unique ID by adding a timestamp
+      const uniqueTransitionId = `transition-message-${Date.now()}`;
       setMessages([
         ...messages,
         {
-          id: "transition-message",
+          id: uniqueTransitionId,
           role: "assistant",
           content:
             "Great! I've collected all the necessary information. Now let's create an emcee script for your event.",
@@ -372,6 +428,61 @@ export function RhymeAIChat({
           100
       )
     : 0;
+
+  // Load chat history if an eventId is provided
+  useEffect(() => {
+    async function fetchChatHistory() {
+      if (eventId) {
+        setIsLoadingHistory(true);
+        try {
+          const response = await loadChatHistory(eventId);
+          if (response.success && response.messages.length > 0) {
+            // Only set messages if we got a successful response with messages
+            setMessages(response.messages);
+          }
+        } catch (error) {
+          console.error("Failed to load chat history:", error);
+        } finally {
+          setIsLoadingHistory(false);
+        }
+      }
+    }
+
+    fetchChatHistory();
+  }, [eventId, setMessages]);
+
+  // Sync chat messages to the database periodically or when component unmounts
+  useEffect(() => {
+    let syncInterval: NodeJS.Timeout;
+
+    // Function to sync all messages that might not be in the database
+    const syncAllMessages = async () => {
+      if (createdEventId && messages.length > 0) {
+        // Filter and convert messages to the format expected by syncChatMessages
+        const chatMessagesToSync = messages
+          .filter((msg) => msg.role === "user" || msg.role === "assistant")
+          .map((msg) => ({
+            id: msg.id,
+            role: msg.role as "user" | "assistant", // Cast to the expected type
+            content: msg.content,
+            toolCalls: msg.toolInvocations || undefined,
+          }));
+
+        await syncChatMessages(createdEventId, chatMessagesToSync);
+      }
+    };
+
+    // Set up periodic sync (every 30 seconds)
+    if (createdEventId) {
+      syncInterval = setInterval(syncAllMessages, 30000);
+    }
+
+    // Sync when component unmounts
+    return () => {
+      clearInterval(syncInterval);
+      syncAllMessages();
+    };
+  }, [createdEventId, messages]);
 
   // Custom styles for markdown components
   const markdownStyles = {

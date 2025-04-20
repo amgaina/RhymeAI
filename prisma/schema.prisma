@@ -47,6 +47,7 @@ model events {
   // Relations
   user             users?    @relation(fields: [user_id], references: [user_id])
   analytics        user_analytics[]
+  chat_messages    chat_messages[]
 
   // Analytics and tracking
   total_duration   Int?      // Total duration in seconds
@@ -71,6 +72,7 @@ model users {
   // Relations
   user_events events[]
   analytics   user_analytics[]
+  chat_messages chat_messages[]
 
   // Preferences
   preferences Json?
@@ -113,4 +115,25 @@ model user_analytics {
   @@index([user_id])
   @@index([event_id])
   @@index([accessed_at])
+}
+
+// Model for storing chat messages related to event creation
+model chat_messages {
+  id            Int       @id @default(autoincrement())
+  event_id      Int
+  user_id       String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+  role          String    // "user" or "assistant"
+  content       String    @db.Text
+  message_id    String    // Unique ID from the chat system
+  tool_calls    Json?     // Store any tool calls made by the assistant
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  event         events    @relation(fields: [event_id], references: [event_id], onDelete: Cascade)
+  user          users     @relation(fields: [user_id], references: [user_id])
+
+  @@index([event_id])
+  @@index([user_id])
+  @@index([created_at])
+  @@index([message_id])
 }
