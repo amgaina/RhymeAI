@@ -33,9 +33,84 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/use-toast";
+import { useState } from "react";
+import { createEvent } from "../actions/event";
 
 export default function CreateEvent() {
   const router = useRouter();
+  const { toast } = useToast();
+
+  // State for form values
+  const [formData, setFormData] = useState({
+    eventName: "",
+    eventType: "",
+    startDate: "",
+    endDate: "",
+    timezone: "",
+    eventDescription: "",
+    expectedAttendees: "",
+    eventFormat: "",
+    primaryVoice: "",
+    accent: "",
+    speakingStyle: "",
+    speakingRate: 50,
+    pitch: 50,
+    multilingual: false,
+  });
+
+  // Handle input changes
+  const handleInputChange = (field: string, value: any) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  // Create event using form data
+  const handleCreateEventForm = async () => {
+    try {
+      // Prepare form data
+      const eventFormData = new FormData();
+      eventFormData.append("eventName", formData.eventName);
+      eventFormData.append("eventType", formData.eventType);
+      eventFormData.append("eventDate", formData.startDate);
+      eventFormData.append("eventLocation", ""); // Fill in if you collect location
+      eventFormData.append("eventDescription", formData.eventDescription);
+      eventFormData.append("expectedAttendees", formData.expectedAttendees);
+      eventFormData.append("language", "English"); // Default to English
+      eventFormData.append(
+        "voiceType",
+        formData.speakingStyle || "Professional"
+      );
+
+      // Create event in database
+      const result = await createEvent(eventFormData);
+
+      if (result.success) {
+        toast({
+          title: "Event created!",
+          description:
+            "Your event was created successfully. Redirecting to event creation page.",
+        });
+        router.push(`/event-creation?eventId=${result.eventId}`);
+      } else {
+        toast({
+          title: "Error creating event",
+          description:
+            result.error || "There was a problem creating your event",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error creating event:", error);
+      toast({
+        title: "Error creating event",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleCreateEvent = () => {
     router.push("/event-creation");
@@ -122,12 +197,19 @@ export default function CreateEvent() {
                             <Input
                               id="event-name"
                               placeholder="e.g., Tech Conference 2025"
+                              onChange={(e) =>
+                                handleInputChange("eventName", e.target.value)
+                              }
                             />
                           </div>
 
                           <div className="space-y-2">
                             <Label htmlFor="event-type">Event Type</Label>
-                            <Select>
+                            <Select
+                              onValueChange={(value) =>
+                                handleInputChange("eventType", value)
+                              }
+                            >
                               <SelectTrigger id="event-type">
                                 <SelectValue placeholder="Select event type" />
                               </SelectTrigger>
@@ -151,17 +233,33 @@ export default function CreateEvent() {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                           <div className="space-y-2">
                             <Label htmlFor="start-date">Start Date</Label>
-                            <Input id="start-date" type="date" />
+                            <Input
+                              id="start-date"
+                              type="date"
+                              onChange={(e) =>
+                                handleInputChange("startDate", e.target.value)
+                              }
+                            />
                           </div>
 
                           <div className="space-y-2">
                             <Label htmlFor="end-date">End Date</Label>
-                            <Input id="end-date" type="date" />
+                            <Input
+                              id="end-date"
+                              type="date"
+                              onChange={(e) =>
+                                handleInputChange("endDate", e.target.value)
+                              }
+                            />
                           </div>
 
                           <div className="space-y-2">
                             <Label htmlFor="timezone">Timezone</Label>
-                            <Select>
+                            <Select
+                              onValueChange={(value) =>
+                                handleInputChange("timezone", value)
+                              }
+                            >
                               <SelectTrigger id="timezone">
                                 <SelectValue placeholder="Select timezone" />
                               </SelectTrigger>
@@ -194,6 +292,12 @@ export default function CreateEvent() {
                             id="event-description"
                             placeholder="Provide a brief description of your event..."
                             rows={4}
+                            onChange={(e) =>
+                              handleInputChange(
+                                "eventDescription",
+                                e.target.value
+                              )
+                            }
                           />
                         </div>
 
@@ -206,12 +310,22 @@ export default function CreateEvent() {
                               id="expected-attendees"
                               type="number"
                               placeholder="e.g., 500"
+                              onChange={(e) =>
+                                handleInputChange(
+                                  "expectedAttendees",
+                                  e.target.value
+                                )
+                              }
                             />
                           </div>
 
                           <div className="space-y-2">
                             <Label htmlFor="event-format">Event Format</Label>
-                            <Select>
+                            <Select
+                              onValueChange={(value) =>
+                                handleInputChange("eventFormat", value)
+                              }
+                            >
                               <SelectTrigger id="event-format">
                                 <SelectValue placeholder="Select format" />
                               </SelectTrigger>
@@ -227,7 +341,10 @@ export default function CreateEvent() {
                         </div>
 
                         <div className="flex justify-end">
-                          <Button className="bg-cta hover:bg-cta/90 text-white btn-pulse">
+                          <Button
+                            className="bg-cta hover:bg-cta/90 text-white btn-pulse"
+                            onClick={handleCreateEventForm}
+                          >
                             Save and Continue
                           </Button>
                         </div>
@@ -249,7 +366,11 @@ export default function CreateEvent() {
                           <div className="space-y-4">
                             <div className="space-y-2">
                               <Label>Primary Voice</Label>
-                              <Select>
+                              <Select
+                                onValueChange={(value) =>
+                                  handleInputChange("primaryVoice", value)
+                                }
+                              >
                                 <SelectTrigger>
                                   <SelectValue placeholder="Select voice type" />
                                 </SelectTrigger>
@@ -275,7 +396,11 @@ export default function CreateEvent() {
 
                             <div className="space-y-2">
                               <Label>Accent</Label>
-                              <Select>
+                              <Select
+                                onValueChange={(value) =>
+                                  handleInputChange("accent", value)
+                                }
+                              >
                                 <SelectTrigger>
                                   <SelectValue placeholder="Select accent" />
                                 </SelectTrigger>
@@ -304,7 +429,11 @@ export default function CreateEvent() {
 
                             <div className="space-y-2">
                               <Label>Speaking Style</Label>
-                              <Select>
+                              <Select
+                                onValueChange={(value) =>
+                                  handleInputChange("speakingStyle", value)
+                                }
+                              >
                                 <SelectTrigger>
                                   <SelectValue placeholder="Select style" />
                                 </SelectTrigger>
@@ -333,7 +462,14 @@ export default function CreateEvent() {
                                   Normal
                                 </span>
                               </div>
-                              <Slider defaultValue={[50]} max={100} step={1} />
+                              <Slider
+                                defaultValue={[50]}
+                                max={100}
+                                step={1}
+                                onValueChange={(value) =>
+                                  handleInputChange("speakingRate", value[0])
+                                }
+                              />
                               <div className="flex justify-between text-xs text-primary-foreground/50">
                                 <span>Slower</span>
                                 <span>Faster</span>
@@ -347,7 +483,14 @@ export default function CreateEvent() {
                                   Medium
                                 </span>
                               </div>
-                              <Slider defaultValue={[50]} max={100} step={1} />
+                              <Slider
+                                defaultValue={[50]}
+                                max={100}
+                                step={1}
+                                onValueChange={(value) =>
+                                  handleInputChange("pitch", value[0])
+                                }
+                              />
                               <div className="flex justify-between text-xs text-primary-foreground/50">
                                 <span>Lower</span>
                                 <span>Higher</span>
@@ -412,7 +555,11 @@ export default function CreateEvent() {
                                 Enable support for multiple languages
                               </p>
                             </div>
-                            <Switch />
+                            <Switch
+                              onCheckedChange={(checked) =>
+                                handleInputChange("multilingual", checked)
+                              }
+                            />
                           </div>
                         </div>
 
@@ -423,7 +570,10 @@ export default function CreateEvent() {
                           >
                             Back
                           </Button>
-                          <Button className="bg-cta hover:bg-cta/90 text-white btn-pulse">
+                          <Button
+                            className="bg-cta hover:bg-cta/90 text-white btn-pulse"
+                            onClick={handleCreateEventForm}
+                          >
                             Save and Continue
                           </Button>
                         </div>
@@ -549,7 +699,10 @@ export default function CreateEvent() {
                           >
                             Back
                           </Button>
-                          <Button className="bg-cta hover:bg-cta/90 text-white btn-pulse">
+                          <Button
+                            className="bg-cta hover:bg-cta/90 text-white btn-pulse"
+                            onClick={handleCreateEventForm}
+                          >
                             Save and Continue
                           </Button>
                         </div>
@@ -571,157 +724,17 @@ export default function CreateEvent() {
                         <div className="bg-primary p-6 rounded-lg animate-fade-in">
                           <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center space-x-3">
-                              <div className="w-12 h-12 bg-accent rounded-full flex items-center justify-center">
-                                <Mic2 className="h-6 w-6" />
-                              </div>
-                              <div>
-                                <h3 className="font-bold text-primary-foreground">
-                                  Tech Conference 2025
-                                </h3>
-                                <p className="text-sm text-primary-foreground/70">
-                                  British Accent, Professional Tone
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex space-x-2">
                               <Button
-                                size="sm"
                                 variant="outline"
-                                className="bg-transparent border-primary-foreground text-primary-foreground hover:bg-primary-foreground/10"
+                                className="text-primary-foreground/70"
                               >
-                                <Play className="h-4 w-4 mr-1" />
-                                Play
+                                Back
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="bg-transparent border-primary-foreground text-primary-foreground hover:bg-primary-foreground/10"
-                              >
-                                Download
+                              <Button className="bg-cta hover:bg-cta/90 text-white btn-pulse">
+                                Finalize Event
                               </Button>
                             </div>
                           </div>
-
-                          <div className="space-y-4">
-                            <div className="bg-primary-foreground/10 p-4 rounded-md">
-                              <h4 className="text-sm font-medium text-primary-foreground/70 mb-2">
-                                Opening Remarks
-                              </h4>
-                              <p className="text-sm text-primary-foreground">
-                                "Welcome to our Tech Conference 2025! I'm your
-                                AI host for today's event. We have an exciting
-                                lineup of speakers and sessions planned for you
-                                over the next three days..."
-                              </p>
-                            </div>
-
-                            <div className="bg-primary-foreground/10 p-4 rounded-md">
-                              <h4 className="text-sm font-medium text-primary-foreground/70 mb-2">
-                                Session Introduction Example
-                              </h4>
-                              <p className="text-sm text-primary-foreground">
-                                "Our next session is titled 'The Future of AI in
-                                Healthcare' presented by Dr. Jane Smith, who is
-                                the Chief Innovation Officer at MedTech
-                                Solutions..."
-                              </p>
-                            </div>
-
-                            <div className="bg-primary-foreground/10 p-4 rounded-md">
-                              <h4 className="text-sm font-medium text-primary-foreground/70 mb-2">
-                                Closing Remarks Example
-                              </h4>
-                              <p className="text-sm text-primary-foreground">
-                                "As we come to the end of our conference, I'd
-                                like to thank all of our speakers, sponsors, and
-                                most importantly, you, our attendees..."
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="border-t border-primary/10 pt-6">
-                          <h3 className="font-medium text-primary-foreground mb-4">
-                            Event Summary
-                          </h3>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-4">
-                              <div className="flex items-start">
-                                <Calendar className="h-5 w-5 text-accent mt-0.5 mr-3" />
-                                <div>
-                                  <h4 className="font-medium text-primary-foreground">
-                                    Event Details
-                                  </h4>
-                                  <p className="text-primary-foreground/70 text-sm">
-                                    Tech Conference 2025
-                                  </p>
-                                  <p className="text-primary-foreground/70 text-sm">
-                                    June 15-17, 2025
-                                  </p>
-                                  <p className="text-primary-foreground/70 text-sm">
-                                    In-Person Event
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="flex items-start">
-                                <Users className="h-5 w-5 text-accent mt-0.5 mr-3" />
-                                <div>
-                                  <h4 className="font-medium text-primary-foreground">
-                                    Audience
-                                  </h4>
-                                  <p className="text-primary-foreground/70 text-sm">
-                                    Expected Attendees: 500
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="space-y-4">
-                              <div className="flex items-start">
-                                <Mic2 className="h-5 w-5 text-accent mt-0.5 mr-3" />
-                                <div>
-                                  <h4 className="font-medium text-primary-foreground">
-                                    Voice Settings
-                                  </h4>
-                                  <p className="text-primary-foreground/70 text-sm">
-                                    Primary Voice: Male, British Accent
-                                  </p>
-                                  <p className="text-primary-foreground/70 text-sm">
-                                    Style: Professional
-                                  </p>
-                                  <p className="text-primary-foreground/70 text-sm">
-                                    Additional Voices: None
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="flex items-start">
-                                <Clock className="h-5 w-5 text-accent mt-0.5 mr-3" />
-                                <div>
-                                  <h4 className="font-medium text-primary-foreground">
-                                    Content Duration
-                                  </h4>
-                                  <p className="text-primary-foreground/70 text-sm">
-                                    Estimated Speaking Time: 45 minutes
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-end space-x-4">
-                          <Button
-                            variant="outline"
-                            className="text-primary-foreground/70"
-                          >
-                            Back
-                          </Button>
-                          <Button className="bg-cta hover:bg-cta/90 text-white btn-pulse">
-                            Finalize Event
-                          </Button>
                         </div>
                       </CardContent>
                     </Card>

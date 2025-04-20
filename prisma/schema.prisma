@@ -9,26 +9,108 @@ datasource db {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model events {
-  event_id       Int       @id @default(autoincrement())
-  created_at     DateTime? @default(now()) @db.Timestamptz(6)
-  user_id        String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
-  title          String?
-  description    String?
-  status         Boolean?
-  location       String?
-  eventdate      DateTime? @db.Timestamp(6)
-  eventstarttime DateTime? @db.Time(6)
-  eventendtime   DateTime? @db.Time(6)
-  voicestyle     String?
-  presentation   String?
-  scriptcontent  String?
-  updatedat      DateTime? @db.Timestamp(6)
+  event_id         Int       @id @default(autoincrement())
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime? @updatedAt @db.Timestamptz(6)
+  user_id          String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+
+  // Basic event information
+  title            String
+  description      String?   @db.Text
+  event_type       String    // Conference, Webinar, Workshop, Corporate Event, etc.
+  status           String    @default("draft") // draft, ready, completed, cancelled
+  location         String?
+  event_date       DateTime  @db.Date
+  start_time       DateTime? @db.Time(6)
+  end_time         DateTime? @db.Time(6)
+  expected_attendees Int?
+
+  // Voice settings
+  voice_settings   Json?     // Stores voice preferences like gender, age, tone, accent, speed
+  language         String    @default("English")
+
+  // Script management
+  script_segments  Json[]    // Array of script segments with content, timing, status
+  segments         script_segments[] // Add the opposite relation field
+
+  // Presentation and media
+  has_presentation Boolean   @default(false)
+  presentation_slides Json?  // Information about presentation slides
+
+  // Recording and streaming
+  recording_devices Json?    // Information about connected recording devices
+  streaming_destinations Json? // Information about streaming platforms
+
+  // Advanced settings
+  event_settings   Json?     // Additional settings like autoAdaptive, autoSlideTransition
+
+  // Relations
+  user             users?    @relation(fields: [user_id], references: [user_id])
+  analytics        user_analytics[]
+
+  // Analytics and tracking
+  total_duration   Int?      // Total duration in seconds
+  play_count       Int       @default(0)
+  last_played      DateTime? @db.Timestamptz(6)
+
+  @@index([user_id])
+  @@index([event_date])
+  @@index([status])
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model users {
-  id      Int      @id @default(autoincrement())
-  name    String
-  user_id String   @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
-  events  String[] @default([])
+  id         Int      @id @default(autoincrement())
+  name       String
+  user_id    String   @unique @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+  email      String?  @unique
+  avatar_url String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  user_events events[]
+  analytics   user_analytics[]
+
+  // Preferences
+  preferences Json?
+
+  @@index([user_id])
+}
+
+// Optional: Model for script segments if you want to store them separately
+model script_segments {
+  id            Int      @id @default(autoincrement())
+  event_id      Int
+  segment_type  String   // introduction, agenda, speaker_intro, etc.
+  content       String   @db.Text
+  audio_url     String?
+  status        String   @default("draft") // draft, editing, generated, generating
+  timing        Int?     // Duration in seconds
+  order         Int
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  event         events   @relation(fields: [event_id], references: [event_id], onDelete: Cascade)
+
+  @@index([event_id])
+}
+
+// Additional utility model for managing user preferences and analytics
+model user_analytics {
+  id          Int       @id @default(autoincrement())
+  user_id     String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+  event_id    Int
+  accessed_at DateTime  @default(now()) @db.Timestamptz(6)
+  action      String    // view, edit, play, share, etc.
+  metadata    Json?     // Additional action metadata
+
+  // Relations
+  user        users     @relation(fields: [user_id], references: [user_id])
+  event       events    @relation(fields: [event_id], references: [event_id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([event_id])
+  @@index([accessed_at])
 }

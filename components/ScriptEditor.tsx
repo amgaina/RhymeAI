@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,16 +17,7 @@ import {
   Clock,
   AlertCircle,
 } from "lucide-react";
-
-export interface ScriptSegment {
-  id: number;
-  type: string;
-  content: string;
-  audio?: string | null;
-  status: "draft" | "editing" | "generating" | "generated" | "failed";
-  timing?: number;
-  presentationSlide?: string;
-}
+import { ScriptSegment, ScriptSegmentStatus } from "@/types/event";
 
 interface ScriptEditorProps {
   segments: ScriptSegment[];
@@ -59,29 +50,30 @@ export default function ScriptEditor({
     setEditingContent("");
   };
 
-  const getStatusIcon = (status: ScriptSegment["status"]) => {
+  const getStatusIcon = (status: ScriptSegmentStatus) => {
     switch (status) {
       case "generated":
         return <CheckCircle className="h-4 w-4 text-green-500" />;
       case "generating":
         return <Clock className="h-4 w-4 text-amber-500" />;
-      case "failed":
-        return <AlertCircle className="h-4 w-4 text-red-500" />;
+      case "editing":
+      case "draft":
+        return <AlertCircle className="h-4 w-4 text-gray-400" />;
       default:
         return <Clock className="h-4 w-4 text-gray-400" />;
     }
   };
 
-  const getStatusText = (status: ScriptSegment["status"]) => {
+  const getStatusText = (status: ScriptSegmentStatus) => {
     switch (status) {
       case "generated":
         return "Audio generated";
       case "generating":
         return "Generating audio...";
-      case "failed":
-        return "Audio generation failed";
       case "editing":
         return "Edited (needs regeneration)";
+      case "draft":
+        return "Draft";
       default:
         return "Draft";
     }
@@ -173,24 +165,26 @@ export default function ScriptEditor({
                           ? "text-green-600"
                           : segment.status === "generating"
                           ? "text-amber-600"
-                          : segment.status === "failed"
-                          ? "text-red-600"
                           : "text-gray-500"
                       }
                     >
                       {getStatusText(segment.status)}
                     </span>
 
-                    {segment.status === "editing" && (
-                      <Button
-                        size="sm"
-                        variant="link"
-                        className="h-5 px-1 text-xs"
-                        onClick={() => onGenerateAudio(segment.id)}
-                      >
-                        Regenerate audio
-                      </Button>
-                    )}
+                    {segment.status !== "generated" &&
+                      segment.status !== "generating" && (
+                        <Button
+                          size="sm"
+                          variant="link"
+                          className="h-5 px-1 text-xs"
+                          onClick={() => onGenerateAudio(segment.id)}
+                        >
+                          {segment.status === "editing"
+                            ? "Regenerate"
+                            : "Generate"}{" "}
+                          audio
+                        </Button>
+                      )}
                   </div>
                 </>
               )}
