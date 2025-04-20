@@ -23,7 +23,6 @@ import EventSidebar from "@/components/event-creation/EventSidebar";
 import EventCreationForm from "@/components/event-creation/EventCreationForm";
 import FileUpload from "@/components/event-creation/FileUpload";
 import ScriptDisplay from "@/components/event-creation/ScriptDisplay";
-import Header from "@/components/event-creation/Header";
 
 export default function EventCreation() {
   const router = useRouter();
@@ -152,17 +151,9 @@ export default function EventCreation() {
 
   return (
     <div className="min-h-screen bg-secondary">
-      {/* Header */}
-      <Header />
 
       <div className="container mx-auto px-4 py-6">
-        <Link
-          href="/dashboard"
-          className="text-primary-foreground/70 hover:text-primary-foreground inline-flex items-center mb-6 animate-fade-in"
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Dashboard
-        </Link>
+  
 
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Sidebar for event creation mode */}
