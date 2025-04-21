@@ -43,11 +43,13 @@
     "@types/uuid": "^10.0.0",
     "ai": "^4.3.9",
     "autoprefixer": "^10.4.20",
+    "aws-sdk": "^2.1692.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
     "date-fns": "4.1.0",
     "embla-carousel-react": "8.5.1",
+    "formidable": "^3.5.3",
     "framer-motion": "^12.7.3",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
@@ -69,6 +71,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/formidable": "^3.4.5",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
