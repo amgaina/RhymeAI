@@ -10,7 +10,7 @@ import {
 import { ArrowLeft, Mic2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { EventCreationForm } from "@/components/EventCreationForm";
+import EventCreationForm from "@/components/EventCreationForm";
 
 export default function CreateEvent() {
   const router = useRouter();

@@ -34,9 +34,13 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { useRouter } from "next/navigation";
-import { createEvent } from "@/app/actions/event";
+import {
+  createEvent,
+  getVoicePreview,
+  generateEventScript,
+} from "@/app/actions/event";
 import { useState } from "react";
-import { Play, Plus } from "lucide-react";
+import { Play, Plus, RotateCw } from "lucide-react";
 
 // Form validation schema
 const eventFormSchema = z.object({
@@ -60,15 +64,22 @@ const eventFormSchema = z.object({
   pitch: z.number().default(50),
   multilingual: z.boolean().default(false),
 
-  // Additional settings can be added as needed
+  // Script Settings
+  scriptTemplate: z.string().optional(),
+  customScript: z.string().optional(),
+  autoGenerate: z.boolean().default(true),
 });
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
 
-export function EventCreationForm() {
+export default function EventCreationForm() {
   const { toast } = useToast();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("details");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+  const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+  const [generatedScript, setGeneratedScript] = useState<string | null>(null);
 
   // Initialize form with react-hook-form
   const form = useForm<EventFormValues>({
@@ -88,8 +99,98 @@ export function EventCreationForm() {
       speakingRate: 50,
       pitch: 50,
       multilingual: false,
+      scriptTemplate: "standard",
+      autoGenerate: true,
+      customScript: "",
     },
   });
+
+  // Function to handle voice preview generation
+  const handleVoicePreview = async () => {
+    try {
+      setIsGeneratingPreview(true);
+      const voiceSettings = {
+        voice: form.getValues("primaryVoice"),
+        accent: form.getValues("accent"),
+        style: form.getValues("speakingStyle"),
+        rate: form.getValues("speakingRate"),
+        pitch: form.getValues("pitch"),
+      };
+
+      const result = await getVoicePreview(voiceSettings);
+
+      if (result.success) {
+        setPreviewUrl(result.previewUrl ?? null);
+        toast({
+          title: "Voice preview ready",
+          description: "Click play to hear the voice sample",
+        });
+      } else {
+        toast({
+          title: "Error generating preview",
+          description: result.error || "Failed to generate voice preview",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Voice preview error:", error);
+      toast({
+        title: "Preview generation failed",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingPreview(false);
+    }
+  };
+
+  // Function to generate script based on event details
+  const handleScriptGeneration = async () => {
+    try {
+      setIsGeneratingScript(true);
+
+      // Using a mock event ID for demonstration
+      const eventId = `temp_${Date.now()}`;
+      const result = await generateEventScript(eventId);
+
+      if (result.success && result.script) {
+        // For demo, we'll just combine the script sections
+        const scriptText = `
+# Introduction
+${result.script.introduction}
+
+# Main Content
+${result.script.mainContent}
+
+# Conclusion
+${result.script.conclusion}
+        `;
+
+        setGeneratedScript(scriptText);
+        form.setValue("customScript", scriptText);
+
+        toast({
+          title: "Script generated",
+          description: "Your event script has been created successfully",
+        });
+      } else {
+        toast({
+          title: "Script generation failed",
+          description: result.error || "Failed to generate script",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Script generation error:", error);
+      toast({
+        title: "Script generation failed",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingScript(false);
+    }
+  };
 
   // Function to handle form submission
   const onSubmit = async (values: EventFormValues) => {
@@ -130,6 +231,11 @@ export function EventCreationForm() {
 
       if (values.pitch) {
         formData.append("pitch", values.pitch.toString());
+      }
+
+      // Add script if available
+      if (values.customScript) {
+        formData.append("scriptContent", values.customScript);
       }
 
       // Create event
@@ -601,9 +707,17 @@ export function EventCreationForm() {
                           variant="outline"
                           className="h-8 px-2"
                           type="button"
+                          onClick={handleVoicePreview}
+                          disabled={isGeneratingPreview}
                         >
-                          <Play className="h-4 w-4 mr-1" />
-                          Play Sample
+                          {isGeneratingPreview ? (
+                            <RotateCw className="h-4 w-4 mr-1 animate-spin" />
+                          ) : (
+                            <Play className="h-4 w-4 mr-1" />
+                          )}
+                          {isGeneratingPreview
+                            ? "Generating..."
+                            : "Play Sample"}
                         </Button>
                       </div>
                       <p className="text-primary-foreground/70 text-sm italic">
@@ -687,45 +801,271 @@ export function EventCreationForm() {
             </Card>
           </TabsContent>
 
-          {/* Script Tab and Preview Tab remain similar to the original, but with proper Submit button */}
+          {/* Script Tab */}
           <TabsContent value="script">
-            {/* Script content similar to original, but with form validation */}
-            <div className="flex justify-end space-x-4 mt-6">
-              <Button
-                type="button"
-                variant="outline"
-                className="text-primary-foreground/70"
-                onClick={() => setActiveTab("voice")}
-              >
-                Back
-              </Button>
-              <Button
-                type="button"
-                className="bg-cta hover:bg-cta/90 text-white btn-pulse"
-                onClick={() => nextTab("script")}
-              >
-                Save and Continue
-              </Button>
-            </div>
+            <Card className="border-none shadow-none">
+              <CardHeader className="px-0 pt-0">
+                <CardTitle>Script Generation</CardTitle>
+                <CardDescription>
+                  Create or customize your event script
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6 px-0">
+                <FormField
+                  control={form.control}
+                  name="scriptTemplate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Script Template</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select template" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="standard">
+                            Standard Emcee
+                          </SelectItem>
+                          <SelectItem value="formal">
+                            Formal Corporate
+                          </SelectItem>
+                          <SelectItem value="casual">
+                            Casual & Friendly
+                          </SelectItem>
+                          <SelectItem value="educational">
+                            Educational Event
+                          </SelectItem>
+                          <SelectItem value="minimal">
+                            Minimal Intervention
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Select a script template as your starting point
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="autoGenerate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">
+                          AI Script Generation
+                        </FormLabel>
+                        <FormDescription>
+                          Automatically generate a script based on your event
+                          details
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="font-medium">Script Content</h3>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    type="button"
+                    onClick={handleScriptGeneration}
+                    disabled={
+                      isGeneratingScript || !form.getValues("autoGenerate")
+                    }
+                  >
+                    {isGeneratingScript ? (
+                      <RotateCw className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <RotateCw className="h-4 w-4 mr-1" />
+                    )}
+                    {isGeneratingScript ? "Generating..." : "Generate Script"}
+                  </Button>
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="customScript"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Textarea
+                          placeholder={
+                            form.getValues("autoGenerate")
+                              ? "Your AI-generated script will appear here. You can edit it further if needed."
+                              : "Write your custom script here..."
+                          }
+                          rows={12}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Use [PAUSE], [EMPHASIS], and [BREATHE] markers to
+                        control delivery
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="flex justify-end space-x-4 mt-6">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="text-primary-foreground/70"
+                    onClick={() => setActiveTab("voice")}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    className="bg-cta hover:bg-cta/90 text-white btn-pulse"
+                    onClick={() => nextTab("script")}
+                  >
+                    Save and Continue
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
+          {/* Preview Tab */}
           <TabsContent value="preview">
-            <div className="flex justify-end space-x-4 mt-6">
-              <Button
-                type="button"
-                variant="outline"
-                className="text-primary-foreground/70"
-                onClick={() => setActiveTab("script")}
-              >
-                Back
-              </Button>
-              <Button
-                type="submit"
-                className="bg-cta hover:bg-cta/90 text-white btn-pulse"
-              >
-                Create Event
-              </Button>
-            </div>
+            <Card className="border-none shadow-none">
+              <CardHeader className="px-0 pt-0">
+                <CardTitle>Event Preview</CardTitle>
+                <CardDescription>
+                  Review your event details before finalizing
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6 px-0">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-primary-foreground/70">
+                        Event Name
+                      </h3>
+                      <p className="text-lg font-semibold">
+                        {form.getValues("eventName")}
+                      </p>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-medium text-primary-foreground/70">
+                        Event Type
+                      </h3>
+                      <p>{form.getValues("eventType")}</p>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-medium text-primary-foreground/70">
+                        Date
+                      </h3>
+                      <p>
+                        {form.getValues("startDate")}
+                        {form.getValues("endDate")
+                          ? ` to ${form.getValues("endDate")}`
+                          : ""}
+                      </p>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-medium text-primary-foreground/70">
+                        Format
+                      </h3>
+                      <p>{form.getValues("eventFormat") || "Not specified"}</p>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-medium text-primary-foreground/70">
+                        Expected Attendees
+                      </h3>
+                      <p>
+                        {form.getValues("expectedAttendees") || "Not specified"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-primary-foreground/70">
+                        Voice Settings
+                      </h3>
+                      <p>
+                        {form.getValues("primaryVoice") || "Default"} ·
+                        {form.getValues("accent")
+                          ? ` ${form.getValues("accent")} accent ·`
+                          : ""}
+                        {form.getValues("speakingStyle")
+                          ? ` ${form.getValues("speakingStyle")} style`
+                          : ""}
+                      </p>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-medium text-primary-foreground/70">
+                        Language Support
+                      </h3>
+                      <p>
+                        {form.getValues("multilingual")
+                          ? "Multilingual"
+                          : "English only"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-medium text-primary-foreground/70">
+                        Description
+                      </h3>
+                      <p className="text-sm">
+                        {form.getValues("eventDescription") ||
+                          "No description provided."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-primary/10 pt-4 mt-4">
+                  <h3 className="font-medium mb-2">Script Preview</h3>
+                  <div className="bg-primary/5 p-4 rounded-md max-h-48 overflow-y-auto">
+                    <pre className="text-sm whitespace-pre-wrap">
+                      {form.getValues("customScript") ||
+                        "No script content available."}
+                    </pre>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-4 mt-6">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="text-primary-foreground/70"
+                    onClick={() => setActiveTab("script")}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="bg-cta hover:bg-cta/90 text-white btn-pulse"
+                  >
+                    Create Event
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </form>

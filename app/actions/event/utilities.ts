@@ -177,3 +177,57 @@ export async function exportEventData(
     return { success: false, error: "Failed to export event data" };
   }
 }
+
+/**
+ * Generates a voice preview based on the provided settings
+ */
+export async function getVoicePreview(voiceSettings: any) {
+  try {
+    // Generate a voice preview based on the provided settings
+    // const previewUrl = await generateVoicePreview(voiceSettings);
+
+    // Mock preview URL
+    const previewUrl = `/api/voice-preview/${Date.now()}`;
+
+    return {
+      success: true,
+      previewUrl,
+    };
+  } catch (error) {
+    console.error("Error generating voice preview:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to generate voice preview",
+    };
+  }
+}
+
+/**
+ * Checks if the event name is available
+ */
+export async function checkEventNameAvailability(name: string) {
+  try {
+    // Check if the event name is already taken
+    // const existing = await db.events.findFirst({ where: { eventName: name } });
+
+    // Mock check (randomly available or not)
+    const isAvailable = Math.random() > 0.2;
+
+    return {
+      success: true,
+      available: isAvailable,
+    };
+  } catch (error) {
+    console.error("Error checking name availability:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to check name availability",
+    };
+  }
+}

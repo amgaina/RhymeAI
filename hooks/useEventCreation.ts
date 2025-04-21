@@ -11,9 +11,11 @@ import { useRouter } from "next/navigation";
 import {
   ScriptSegment,
   ScriptSegmentStatus,
-  VoiceSettings,
+  VoiceSettings as ClientVoiceSettings,
   VoiceSettingsTone,
 } from "@/types/event";
+// Import server-specific types
+import { VoiceSettings as ServerVoiceSettings } from "@/app/actions/event/types";
 
 export type EventFormData = {
   eventName: string;
@@ -210,14 +212,14 @@ export default function useEventCreation() {
     // Create event in database
     const result = await createEvent(formDataObj);
 
-    if (result.success) {
+    if (result.success && result.eventId) {
       toast({
         title: "Event created successfully!",
         description: "Your event has been saved to the database.",
         variant: "default",
       });
 
-      if (scriptSegments.length > 0 && result.eventId) {
+      if (scriptSegments.length > 0) {
         try {
           // Determine tone from voice type
           let tone: VoiceSettingsTone = "casual";
@@ -234,19 +236,25 @@ export default function useEventCreation() {
             tone = "authoritative";
           }
 
-          // Save voice settings
-          const voiceSettings: VoiceSettings = {
-            gender: "neutral",
+          // Create a server-compatible voice settings object
+          // Make sure all required fields have non-undefined values
+          const voiceSettings: ServerVoiceSettings = {
+            gender: "neutral", // Required field
             age: "middle-aged",
-            tone: tone,
-            speed: "medium",
+            tone: tone, // Required field
+            speed: "medium", // Required field
+            // pitch is optional
           };
 
-          await updateVoiceSettings(result.eventId, voiceSettings);
+          // Convert event ID to string if it's a number
+          const eventIdStr = result.eventId.toString();
+          const eventIdNum = parseInt(eventIdStr, 10);
+
+          await updateVoiceSettings(eventIdNum, voiceSettings);
 
           // Either generate script or save existing segments
           if (collectedEventData) {
-            await generateScript(result.eventId);
+            await generateScript(eventIdStr);
           } else {
             // Save existing script segments
             for (const segment of scriptSegments) {
@@ -259,19 +267,18 @@ export default function useEventCreation() {
                   ? segment.status
                   : "draft";
 
-              await createScriptSegment(result.eventId, {
+              await createScriptSegment(eventIdStr, {
                 type: segment.type,
                 content: segment.content,
                 status: segmentStatus,
-                audio_url: segment.audio || null,
-                timing: 30,
-                order: segment.id,
+                timing: 30, // This is now properly typed as a number
+                order: segment.order,
               });
             }
           }
 
           // Mark event as finalized
-          await finalizeEvent(result.eventId);
+          await finalizeEvent(eventIdStr);
         } catch (error) {
           console.error("Error saving script:", error);
           toast({

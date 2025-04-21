@@ -116,3 +116,30 @@ export async function generatePresentationSlides(eventId: number) {
     return { success: false, error: "Failed to generate presentation slides" };
   }
 }
+
+/**
+ * Generates event presentation
+ */
+export async function generateEventPresentation(eventId: string) {
+  try {
+    // Generate presentation based on event and script
+    // const presentation = await createAIPresentation(eventId);
+
+    revalidatePath(`/event-creation?eventId=${eventId}`);
+
+    return {
+      success: true,
+      presentationUrl: `/presentations/${eventId}`,
+      message: "Presentation generated successfully",
+    };
+  } catch (error) {
+    console.error("Error generating presentation:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to generate presentation",
+    };
+  }
+}

@@ -137,3 +137,33 @@ export async function recordEngagementMetrics(
     return { success: false, error: "Failed to record engagement metrics" };
   }
 }
+
+/**
+ * Fetches analytics data for an event
+ */
+export async function getEventAnalytics(eventId: string) {
+  try {
+    // Fetch analytics data for an event
+    // const analytics = await db.analytics.findUnique({ where: { eventId } });
+
+    // Mock analytics data
+    const analytics = {
+      views: 120,
+      interactions: 45,
+      averageEngagement: "4.5 minutes",
+      peakTimes: ["10:15 AM", "2:30 PM"],
+    };
+
+    return {
+      success: true,
+      analytics,
+    };
+  } catch (error) {
+    console.error("Error fetching analytics:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Failed to fetch analytics",
+    };
+  }
+}

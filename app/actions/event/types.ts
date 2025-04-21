@@ -1,10 +1,39 @@
-export type VoiceSettings = {
-  gender: "male" | "female" | "neutral";
-  age: "young" | "middle-aged" | "mature";
-  tone: "professional" | "casual" | "energetic" | "calm" | "authoritative";
-  accent?: string;
-  speed: "slow" | "medium" | "fast";
-};
+// Server-side voice settings types (must match database schema)
+export type VoiceSettingsTone =
+  | "professional"
+  | "casual"
+  | "energetic"
+  | "calm"
+  | "authoritative";
+export type VoiceSettingsGender = "male" | "female" | "neutral";
+export type VoiceSettingsAge = "young" | "middle-aged" | "mature";
+export type VoiceSettingsSpeed = "slow" | "medium" | "fast";
+export type VoiceSettingsAccent =
+  | "american"
+  | "british"
+  | "australian"
+  | "indian"
+  | "neutral";
+export type VoiceSettingsPitch = "low" | "medium" | "high";
+
+export interface VoiceSettings {
+  gender: VoiceSettingsGender;
+  age?: VoiceSettingsAge;
+  tone: VoiceSettingsTone;
+  accent?: VoiceSettingsAccent;
+  speed: VoiceSettingsSpeed;
+  pitch?: VoiceSettingsPitch;
+}
+
+// Script types for server actions
+export interface ScriptSegmentInput {
+  type: string;
+  content: string;
+  status: string;
+  audio_url?: string | null;
+  timing?: number;
+  order: number;
+}
 
 export type ScriptSegment = {
   id: number;
