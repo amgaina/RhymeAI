@@ -63,12 +63,6 @@ export function NavLinks() {
       >
         Features
       </button>
-      <button
-        onClick={() => (window.location.hash = "#how-it-works")}
-        className="hover:text-accent transition-colors font-medium tracking-wide hover:underline underline-offset-4 bg-transparent border-none p-0 m-0 text-inherit font-inherit cursor-pointer"
-      >
-        How It Works
-      </button>
     </nav>
   );
 }

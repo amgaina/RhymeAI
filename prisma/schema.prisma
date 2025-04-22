@@ -30,8 +30,12 @@ model events {
   language         String    @default("English")
 
   // Script management
-  script_segments  Json[]    // Array of script segments with content, timing, status
-  segments         script_segments[] // Add the opposite relation field
+  script_segments  Json[]    // Array of script segments with content, timing, status (deprecated, use segments relation)
+  segments         script_segments[] // Script segments relation
+
+  // Layout management
+  event_layout     Json?     // Deprecated: JSON layout storage
+  layout           event_layout? // New: Relational layout
 
   // Presentation and media
   has_presentation Boolean   @default(false)
@@ -80,23 +84,65 @@ model users {
   @@index([user_id])
 }
 
-// Optional: Model for script segments if you want to store them separately
-model script_segments {
-  id            Int      @id @default(autoincrement())
-  event_id      Int
-  segment_type  String   // introduction, agenda, speaker_intro, etc.
-  content       String   @db.Text
-  audio_url     String?
-  status        String   @default("draft") // draft, editing, generated, generating
-  timing        Int?     // Duration in seconds
-  order         Int
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+// Event layout model - top level container for layout segments
+model event_layout {
+  id                Int              @id @default(autoincrement())
+  event_id          Int              @unique // One layout per event
+  total_duration    Int              // Total duration in minutes
+  layout_version    Int              @default(1)
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+  last_generated_by String?          // ID or name of the LLM model used
+  chat_context      String?          @db.Text // Relevant context from chat that influenced the layout
 
   // Relations
-  event         events   @relation(fields: [event_id], references: [event_id], onDelete: Cascade)
+  event             events           @relation(fields: [event_id], references: [event_id], onDelete: Cascade)
+  segments          layout_segments[]
 
   @@index([event_id])
+}
+
+// Layout segments model - individual segments within a layout
+model layout_segments {
+  id                String           @id @default(uuid())
+  layout_id         Int
+  name              String
+  type              String           // introduction, keynote, panel, etc.
+  description       String           @db.Text
+  duration          Int              // Duration in minutes
+  order             Int
+  custom_properties Json?            // For segment-specific properties
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+
+  // Relations
+  layout            event_layout     @relation(fields: [layout_id], references: [id], onDelete: Cascade)
+  script_segments   script_segments[]
+
+  @@unique([layout_id, order]) // Enforce unique ordering within a layout
+  @@index([layout_id])
+}
+
+// Optional: Model for script segments if you want to store them separately
+model script_segments {
+  id                Int              @id @default(autoincrement())
+  event_id          Int
+  layout_segment_id String?          // Reference to the layout segment that generated this script
+  segment_type      String           // introduction, agenda, speaker_intro, etc.
+  content           String           @db.Text
+  audio_url         String?
+  status            String           @default("draft") // draft, editing, generated, generating
+  timing            Int              @default(0) // Duration in seconds
+  order             Int              @default(0)
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+
+  // Relations
+  event             events           @relation(fields: [event_id], references: [event_id], onDelete: Cascade)
+  layout_segment    layout_segments? @relation(fields: [layout_segment_id], references: [id], onDelete: SetNull)
+
+  @@index([event_id])
+  @@index([layout_segment_id])
 }
 
 // Additional utility model for managing user preferences and analytics

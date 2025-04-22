@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { auth } from "@clerk/nextjs/server";
+import {
+  EventLayout,
+  LayoutSegment,
+  SegmentType,
+  EventType,
+} from "@/types/layout";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * Generate a rough event layout with timing suggestions
@@ -34,9 +41,6 @@ export async function generateEventLayout(eventId: string) {
 
     console.log(`Generating event layout for: ${eventId}`);
 
-    // In a real implementation, you would use AI to generate a layout based on event type and details
-    // For now, we'll create a template layout based on event type
-
     // Determine event duration based on type (in minutes)
     let totalDuration = 60; // Default 1 hour
     if (event.event_type?.toLowerCase().includes("conference")) {
@@ -48,13 +52,25 @@ export async function generateEventLayout(eventId: string) {
     }
 
     // Generate layout segments based on event type
-    const layoutSegments = generateLayoutByEventType(event.event_type, event.title, totalDuration);
+    const layoutSegments = generateLayoutByEventType(
+      event.event_type as EventType,
+      event.title,
+      totalDuration
+    );
 
-    // Store the layout in the database
+    // Create the full event layout structure
+    const eventLayout: EventLayout = {
+      segments: layoutSegments,
+      totalDuration,
+      lastUpdated: new Date().toISOString(),
+      version: 1,
+    };
+
+    // Store the layout in the database with proper JSON serialization
     await db.events.update({
       where: { event_id: eventIdNum },
       data: {
-        event_layout: layoutSegments,
+        event_layout: JSON.parse(JSON.stringify(eventLayout)) as any,
         updated_at: new Date(),
       },
     });
@@ -62,17 +78,21 @@ export async function generateEventLayout(eventId: string) {
     // Revalidate paths
     revalidatePath(`/events/${eventId}`);
     revalidatePath(`/event-creation?eventId=${eventId}`);
+    revalidatePath(`/event/${eventId}`);
 
     return {
       success: true,
-      layout: layoutSegments,
+      layout: eventLayout,
       message: "Event layout generated successfully",
     };
   } catch (error) {
     console.error("Error generating event layout:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to generate event layout",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to generate event layout",
     };
   }
 }
@@ -80,9 +100,13 @@ export async function generateEventLayout(eventId: string) {
 /**
  * Generate layout segments based on event type
  */
-function generateLayoutByEventType(eventType: string = "general", eventTitle: string = "Event", totalDuration: number = 60) {
-  const type = eventType?.toLowerCase() || "general";
-  
+function generateLayoutByEventType(
+  eventType: EventType = "general",
+  eventTitle: string = "Event",
+  totalDuration: number = 60
+): LayoutSegment[] {
+  const type = (eventType?.toLowerCase() as EventType) || "general";
+
   if (type.includes("conference")) {
     return generateConferenceLayout(eventTitle, totalDuration);
   } else if (type.includes("webinar")) {
@@ -99,7 +123,10 @@ function generateLayoutByEventType(eventType: string = "general", eventTitle: st
 /**
  * Generate a conference event layout
  */
-function generateConferenceLayout(eventTitle: string, totalDuration: number) {
+function generateConferenceLayout(
+  eventTitle: string,
+  totalDuration: number
+): LayoutSegment[] {
   // Calculate segment durations based on total duration
   const introductionTime = Math.max(5, Math.round(totalDuration * 0.05));
   const keynoteTime = Math.max(30, Math.round(totalDuration * 0.25));
@@ -111,6 +138,7 @@ function generateConferenceLayout(eventTitle: string, totalDuration: number) {
 
   return [
     {
+      id: uuidv4(),
       name: "Welcome and Introduction",
       type: "introduction",
       description: "Opening remarks and welcome to attendees",
@@ -118,6 +146,7 @@ function generateConferenceLayout(eventTitle: string, totalDuration: number) {
       order: 1,
     },
     {
+      id: uuidv4(),
       name: "Keynote Presentation",
       type: "keynote",
       description: "Main keynote speech by the featured speaker",
@@ -125,6 +154,7 @@ function generateConferenceLayout(eventTitle: string, totalDuration: number) {
       order: 2,
     },
     {
+      id: uuidv4(),
       name: "Panel Discussion",
       type: "panel",
       description: "Expert panel discussing industry trends",
@@ -132,6 +162,7 @@ function generateConferenceLayout(eventTitle: string, totalDuration: number) {
       order: 3,
     },
     {
+      id: uuidv4(),
       name: "Networking Break",
       type: "break",
       description: "Refreshments and networking opportunity",
@@ -139,6 +170,7 @@ function generateConferenceLayout(eventTitle: string, totalDuration: number) {
       order: 4,
     },
     {
+      id: uuidv4(),
       name: "Q&A Session",
       type: "q_and_a",
       description: "Audience questions for speakers",
@@ -146,6 +178,7 @@ function generateConferenceLayout(eventTitle: string, totalDuration: number) {
       order: 5,
     },
     {
+      id: uuidv4(),
       name: "Closing Remarks",
       type: "conclusion",
       description: "Summary and closing thoughts",
@@ -158,7 +191,10 @@ function generateConferenceLayout(eventTitle: string, totalDuration: number) {
 /**
  * Generate a webinar event layout
  */
-function generateWebinarLayout(eventTitle: string, totalDuration: number) {
+function generateWebinarLayout(
+  eventTitle: string,
+  totalDuration: number
+): LayoutSegment[] {
   // Calculate segment durations based on total duration
   const introductionTime = Math.max(5, Math.round(totalDuration * 0.08));
   const presentationTime = Math.max(30, Math.round(totalDuration * 0.5));
@@ -168,6 +204,7 @@ function generateWebinarLayout(eventTitle: string, totalDuration: number) {
 
   return [
     {
+      id: uuidv4(),
       name: "Welcome and Introduction",
       type: "introduction",
       description: "Introduction to the webinar and speakers",
@@ -175,6 +212,7 @@ function generateWebinarLayout(eventTitle: string, totalDuration: number) {
       order: 1,
     },
     {
+      id: uuidv4(),
       name: "Main Presentation",
       type: "presentation",
       description: "Core content presentation",
@@ -182,6 +220,7 @@ function generateWebinarLayout(eventTitle: string, totalDuration: number) {
       order: 2,
     },
     {
+      id: uuidv4(),
       name: "Product Demonstration",
       type: "demo",
       description: "Live demonstration or walkthrough",
@@ -189,6 +228,7 @@ function generateWebinarLayout(eventTitle: string, totalDuration: number) {
       order: 3,
     },
     {
+      id: uuidv4(),
       name: "Q&A Session",
       type: "q_and_a",
       description: "Answering attendee questions",
@@ -196,6 +236,7 @@ function generateWebinarLayout(eventTitle: string, totalDuration: number) {
       order: 4,
     },
     {
+      id: uuidv4(),
       name: "Closing and Next Steps",
       type: "conclusion",
       description: "Summary and call to action",
@@ -208,7 +249,10 @@ function generateWebinarLayout(eventTitle: string, totalDuration: number) {
 /**
  * Generate a workshop event layout
  */
-function generateWorkshopLayout(eventTitle: string, totalDuration: number) {
+function generateWorkshopLayout(
+  eventTitle: string,
+  totalDuration: number
+): LayoutSegment[] {
   // Calculate segment durations based on total duration
   const introductionTime = Math.max(10, Math.round(totalDuration * 0.08));
   const theoryTime = Math.max(20, Math.round(totalDuration * 0.2));
@@ -219,6 +263,7 @@ function generateWorkshopLayout(eventTitle: string, totalDuration: number) {
 
   return [
     {
+      id: uuidv4(),
       name: "Welcome and Overview",
       type: "introduction",
       description: "Introduction to the workshop and objectives",
@@ -226,6 +271,7 @@ function generateWorkshopLayout(eventTitle: string, totalDuration: number) {
       order: 1,
     },
     {
+      id: uuidv4(),
       name: "Theoretical Background",
       type: "theory",
       description: "Explanation of key concepts",
@@ -233,6 +279,7 @@ function generateWorkshopLayout(eventTitle: string, totalDuration: number) {
       order: 2,
     },
     {
+      id: uuidv4(),
       name: "Practical Exercise",
       type: "practical",
       description: "Hands-on activity for participants",
@@ -240,6 +287,7 @@ function generateWorkshopLayout(eventTitle: string, totalDuration: number) {
       order: 3,
     },
     {
+      id: uuidv4(),
       name: "Break",
       type: "break",
       description: "Short break for refreshments",
@@ -247,6 +295,7 @@ function generateWorkshopLayout(eventTitle: string, totalDuration: number) {
       order: 4,
     },
     {
+      id: uuidv4(),
       name: "Group Discussion",
       type: "group_work",
       description: "Collaborative problem-solving",
@@ -254,6 +303,7 @@ function generateWorkshopLayout(eventTitle: string, totalDuration: number) {
       order: 5,
     },
     {
+      id: uuidv4(),
       name: "Conclusion and Takeaways",
       type: "conclusion",
       description: "Summary and next steps",
@@ -266,7 +316,10 @@ function generateWorkshopLayout(eventTitle: string, totalDuration: number) {
 /**
  * Generate a corporate event layout
  */
-function generateCorporateLayout(eventTitle: string, totalDuration: number) {
+function generateCorporateLayout(
+  eventTitle: string,
+  totalDuration: number
+): LayoutSegment[] {
   // Calculate segment durations based on total duration
   const introductionTime = Math.max(5, Math.round(totalDuration * 0.08));
   const agendaTime = Math.max(5, Math.round(totalDuration * 0.05));
@@ -277,6 +330,7 @@ function generateCorporateLayout(eventTitle: string, totalDuration: number) {
 
   return [
     {
+      id: uuidv4(),
       name: "Welcome and Introduction",
       type: "introduction",
       description: "Opening remarks and introductions",
@@ -284,6 +338,7 @@ function generateCorporateLayout(eventTitle: string, totalDuration: number) {
       order: 1,
     },
     {
+      id: uuidv4(),
       name: "Meeting Agenda",
       type: "agenda",
       description: "Overview of topics to be covered",
@@ -291,6 +346,7 @@ function generateCorporateLayout(eventTitle: string, totalDuration: number) {
       order: 2,
     },
     {
+      id: uuidv4(),
       name: "Business Update",
       type: "presentation",
       description: "Presentation of key business metrics and updates",
@@ -298,6 +354,7 @@ function generateCorporateLayout(eventTitle: string, totalDuration: number) {
       order: 3,
     },
     {
+      id: uuidv4(),
       name: "Strategic Discussion",
       type: "discussion",
       description: "Discussion of strategic initiatives",
@@ -305,6 +362,7 @@ function generateCorporateLayout(eventTitle: string, totalDuration: number) {
       order: 4,
     },
     {
+      id: uuidv4(),
       name: "Action Items",
       type: "action_items",
       description: "Assignment of tasks and responsibilities",
@@ -312,6 +370,7 @@ function generateCorporateLayout(eventTitle: string, totalDuration: number) {
       order: 5,
     },
     {
+      id: uuidv4(),
       name: "Closing Remarks",
       type: "conclusion",
       description: "Summary and next steps",
@@ -324,7 +383,10 @@ function generateCorporateLayout(eventTitle: string, totalDuration: number) {
 /**
  * Generate a general event layout
  */
-function generateGeneralLayout(eventTitle: string, totalDuration: number) {
+function generateGeneralLayout(
+  eventTitle: string,
+  totalDuration: number
+): LayoutSegment[] {
   // Calculate segment durations based on total duration
   const introductionTime = Math.max(5, Math.round(totalDuration * 0.1));
   const mainContentTime = Math.max(30, Math.round(totalDuration * 0.6));
@@ -333,6 +395,7 @@ function generateGeneralLayout(eventTitle: string, totalDuration: number) {
 
   return [
     {
+      id: uuidv4(),
       name: "Welcome and Introduction",
       type: "introduction",
       description: "Opening remarks and welcome",
@@ -340,6 +403,7 @@ function generateGeneralLayout(eventTitle: string, totalDuration: number) {
       order: 1,
     },
     {
+      id: uuidv4(),
       name: "Main Content",
       type: "main_content",
       description: "Primary event content",
@@ -347,6 +411,7 @@ function generateGeneralLayout(eventTitle: string, totalDuration: number) {
       order: 2,
     },
     {
+      id: uuidv4(),
       name: "Q&A Session",
       type: "q_and_a",
       description: "Audience questions and discussion",
@@ -354,6 +419,7 @@ function generateGeneralLayout(eventTitle: string, totalDuration: number) {
       order: 3,
     },
     {
+      id: uuidv4(),
       name: "Closing Remarks",
       type: "conclusion",
       description: "Summary and thank you",
@@ -368,14 +434,8 @@ function generateGeneralLayout(eventTitle: string, totalDuration: number) {
  */
 export async function updateEventLayoutSegment(
   eventId: string,
-  segmentIndex: number,
-  updates: {
-    name?: string;
-    type?: string;
-    description?: string;
-    duration?: number;
-    order?: number;
-  }
+  segmentId: string,
+  updates: Partial<LayoutSegment>
 ) {
   try {
     // Convert string eventId to number
@@ -402,28 +462,46 @@ export async function updateEventLayoutSegment(
     }
 
     // Get the current layout
-    const currentLayout = event.event_layout as any[];
+    const currentLayout = event.event_layout as unknown as EventLayout;
 
-    // Validate segment index
-    if (segmentIndex < 0 || segmentIndex >= currentLayout.length) {
+    // Find the segment to update
+    const segmentIndex = currentLayout.segments.findIndex(
+      (segment) => segment.id === segmentId
+    );
+
+    if (segmentIndex === -1) {
       return {
         success: false,
-        error: "Invalid segment index",
+        error: "Segment not found in layout",
       };
     }
 
     // Update the segment
-    const updatedLayout = [...currentLayout];
-    updatedLayout[segmentIndex] = {
-      ...updatedLayout[segmentIndex],
+    const updatedLayout = {
+      ...currentLayout,
+      segments: [...currentLayout.segments],
+      lastUpdated: new Date().toISOString(),
+      version: currentLayout.version + 1,
+    };
+
+    updatedLayout.segments[segmentIndex] = {
+      ...updatedLayout.segments[segmentIndex],
       ...updates,
     };
+
+    // Recalculate total duration if needed
+    if (updates.duration) {
+      updatedLayout.totalDuration = updatedLayout.segments.reduce(
+        (sum, segment) => sum + segment.duration,
+        0
+      );
+    }
 
     // Save the updated layout
     await db.events.update({
       where: { event_id: eventIdNum },
       data: {
-        event_layout: updatedLayout,
+        event_layout: JSON.parse(JSON.stringify(updatedLayout)),
         updated_at: new Date(),
       },
     });
@@ -431,6 +509,7 @@ export async function updateEventLayoutSegment(
     // Revalidate paths
     revalidatePath(`/events/${eventId}`);
     revalidatePath(`/event-creation?eventId=${eventId}`);
+    revalidatePath(`/event/${eventId}`);
 
     return {
       success: true,
@@ -441,7 +520,181 @@ export async function updateEventLayoutSegment(
     console.error("Error updating event layout segment:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to update layout segment",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to update layout segment",
+    };
+  }
+}
+
+/**
+ * Add a new segment to an event layout
+ */
+export async function addLayoutSegment(
+  eventId: string,
+  newSegment: Omit<LayoutSegment, "id">
+) {
+  try {
+    const eventIdNum = parseInt(eventId, 10);
+
+    if (isNaN(eventIdNum)) {
+      return {
+        success: false,
+        error: "Invalid event ID format",
+      };
+    }
+
+    const event = await db.events.findUnique({
+      where: { event_id: eventIdNum },
+      select: { event_layout: true },
+    });
+
+    if (!event || !event.event_layout) {
+      return {
+        success: false,
+        error: "Event or layout not found",
+      };
+    }
+
+    // Properly convert JSON to EventLayout with type safety
+    const currentLayout: EventLayout = JSON.parse(
+      JSON.stringify(event.event_layout)
+    ) as unknown as EventLayout;
+
+    // Create a complete segment with ID
+    const completeSegment: LayoutSegment = {
+      ...newSegment,
+      id: uuidv4(),
+    };
+
+    // Add segment to layout
+    const updatedLayout: EventLayout = {
+      ...currentLayout,
+      segments: [...currentLayout.segments, completeSegment],
+      lastUpdated: new Date().toISOString(),
+      version: currentLayout.version + 1,
+      totalDuration: currentLayout.totalDuration + newSegment.duration,
+    };
+
+    // Save updated layout - convert to JSON for Prisma
+    await db.events.update({
+      where: { event_id: eventIdNum },
+      data: {
+        event_layout: JSON.parse(JSON.stringify(updatedLayout)) as any,
+        updated_at: new Date(),
+      },
+    });
+
+    // Revalidate paths
+    revalidatePath(`/events/${eventId}`);
+    revalidatePath(`/event-creation?eventId=${eventId}`);
+    revalidatePath(`/event/${eventId}`);
+
+    return {
+      success: true,
+      layout: updatedLayout,
+      newSegment: completeSegment,
+      message: "Segment added to layout successfully",
+    };
+  } catch (error) {
+    console.error("Error adding layout segment:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to add segment",
+    };
+  }
+}
+
+/**
+ * Delete a segment from an event layout
+ */
+export async function deleteLayoutSegment(eventId: string, segmentId: string) {
+  try {
+    const eventIdNum = parseInt(eventId, 10);
+
+    if (isNaN(eventIdNum)) {
+      return {
+        success: false,
+        error: "Invalid event ID format",
+      };
+    }
+
+    const event = await db.events.findUnique({
+      where: { event_id: eventIdNum },
+      select: { event_layout: true },
+    });
+
+    if (!event || !event.event_layout) {
+      return {
+        success: false,
+        error: "Event or layout not found",
+      };
+    }
+
+    // Properly convert JSON to EventLayout with type safety
+    const currentLayout: EventLayout = JSON.parse(
+      JSON.stringify(event.event_layout)
+    ) as unknown as EventLayout;
+
+    // Find segment to delete
+    const segmentIndex = currentLayout.segments.findIndex(
+      (segment) => segment.id === segmentId
+    );
+
+    if (segmentIndex === -1) {
+      return {
+        success: false,
+        error: "Segment not found in layout",
+      };
+    }
+
+    // Calculate new duration
+    const segmentDuration = currentLayout.segments[segmentIndex].duration;
+
+    // Remove segment and update layout
+    const updatedSegments = [...currentLayout.segments];
+    updatedSegments.splice(segmentIndex, 1);
+
+    // Update order for remaining segments
+    const reorderedSegments = updatedSegments.map((segment, index) => ({
+      ...segment,
+      order: index + 1,
+    }));
+
+    const updatedLayout: EventLayout = {
+      ...currentLayout,
+      segments: reorderedSegments,
+      lastUpdated: new Date().toISOString(),
+      version: currentLayout.version + 1,
+      totalDuration: currentLayout.totalDuration - segmentDuration,
+    };
+
+    // Save updated layout with proper JSON serialization
+    await db.events.update({
+      where: { event_id: eventIdNum },
+      data: {
+        event_layout: JSON.parse(JSON.stringify(updatedLayout)) as any,
+        updated_at: new Date(),
+      },
+    });
+
+    // Revalidate paths
+    revalidatePath(`/events/${eventId}`);
+    revalidatePath(`/event-creation?eventId=${eventId}`);
+    revalidatePath(`/event/${eventId}`);
+
+    return {
+      success: true,
+      layout: updatedLayout,
+      message: "Segment deleted from layout successfully",
+    };
+  } catch (error) {
+    console.error("Error deleting layout segment:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Failed to delete segment",
     };
   }
 }
@@ -462,16 +715,126 @@ export async function generateScriptFromLayout(eventId: string) {
       };
     }
 
-    // Get the event with layout
+    // Get the event with layout from the database
     const event = await db.events.findUnique({
       where: { event_id: eventIdNum },
-      select: { 
+      select: {
         event_id: true,
-        title: true, 
-        event_type: true, 
+        title: true,
+        event_type: true,
+        description: true,
+        voice_settings: true,
+        layout: {
+          include: {
+            segments: {
+              orderBy: {
+                order: "asc",
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!event) {
+      return {
+        success: false,
+        error: "Event not found",
+      };
+    }
+
+    // Check if layout exists
+    if (
+      !event.layout ||
+      !event.layout.segments ||
+      event.layout.segments.length === 0
+    ) {
+      // Fallback to JSON layout if relational layout doesn't exist
+      return generateScriptFromJsonLayout(eventId);
+    }
+
+    // Delete any existing script segments
+    await db.script_segments.deleteMany({
+      where: { event_id: eventIdNum },
+    });
+
+    // Generate script content for each layout segment
+    const createdSegments = await Promise.all(
+      event.layout.segments.map(async (segment) => {
+        // Generate appropriate content based on segment type
+        const content = generateContentForSegmentType(
+          segment.type as SegmentType, // Cast to SegmentType
+          segment.name,
+          event.title,
+          event.event_type,
+          segment.duration
+        );
+
+        // Create script segment in database
+        return db.script_segments.create({
+          data: {
+            event_id: eventIdNum,
+            layout_segment_id: segment.id,
+            segment_type: segment.type,
+            content: content,
+            status: "draft",
+            timing: segment.duration * 60, // Convert minutes to seconds
+            order: segment.order,
+          },
+        });
+      })
+    );
+
+    // Update the event status
+    await db.events.update({
+      where: { event_id: eventIdNum },
+      data: {
+        status: "scripting",
+        updated_at: new Date(),
+      },
+    });
+
+    // Revalidate paths
+    revalidatePath(`/events/${eventId}`);
+    revalidatePath(`/event-creation?eventId=${eventId}`);
+    revalidatePath(`/event/${eventId}`);
+
+    return {
+      success: true,
+      segments: createdSegments,
+      message: "Script generated from layout successfully",
+    };
+  } catch (error) {
+    console.error("Error generating script from layout:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to generate script from layout",
+    };
+  }
+}
+
+/**
+ * Fallback function to generate script from JSON layout
+ * This is for backward compatibility
+ */
+async function generateScriptFromJsonLayout(eventId: string) {
+  try {
+    // Convert string eventId to number
+    const eventIdNum = parseInt(eventId, 10);
+
+    // Get the event with JSON layout
+    const event = await db.events.findUnique({
+      where: { event_id: eventIdNum },
+      select: {
+        event_id: true,
+        title: true,
+        event_type: true,
         description: true,
         event_layout: true,
-        voice_settings: true
+        voice_settings: true,
       },
     });
 
@@ -483,13 +846,24 @@ export async function generateScriptFromLayout(eventId: string) {
     }
 
     // Get the layout
-    const layout = event.event_layout as any[];
+    const layout = event.event_layout as any;
+    const segments = layout.segments || [];
+
+    // Define a type for script segments
+    type ScriptSegmentInput = {
+      layout_segment_id: string;
+      segment_type: string;
+      content: string;
+      status: string;
+      timing: number;
+      order: number;
+    };
 
     // Generate script content for each layout segment
-    const scriptSegments = layout.map((segment, index) => {
+    const scriptSegments = segments.map((segment: any): ScriptSegmentInput => {
       // Generate appropriate content based on segment type
       const content = generateContentForSegmentType(
-        segment.type,
+        segment.type as SegmentType,
         segment.name,
         event.title,
         event.event_type,
@@ -497,20 +871,27 @@ export async function generateScriptFromLayout(eventId: string) {
       );
 
       return {
+        layout_segment_id: segment.id,
         segment_type: segment.type,
         content,
         status: "draft",
         timing: segment.duration * 60, // Convert minutes to seconds
-        order: segment.order || index + 1,
+        order: segment.order,
       };
+    });
+
+    // Delete any existing script segments
+    await db.script_segments.deleteMany({
+      where: { event_id: eventIdNum },
     });
 
     // Save the script segments to the database
     const createdSegments = await Promise.all(
-      scriptSegments.map((segment) =>
+      scriptSegments.map((segment: ScriptSegmentInput) =>
         db.script_segments.create({
           data: {
             event_id: eventIdNum,
+            layout_segment_id: segment.layout_segment_id,
             segment_type: segment.segment_type,
             content: segment.content,
             status: segment.status,
@@ -521,17 +902,10 @@ export async function generateScriptFromLayout(eventId: string) {
       )
     );
 
-    // Update the event with the script_segments JSON array for quick access
+    // Update the event status
     await db.events.update({
       where: { event_id: eventIdNum },
       data: {
-        script_segments: scriptSegments.map((segment) => ({
-          type: segment.segment_type,
-          content: segment.content,
-          status: segment.status,
-          timing: segment.timing,
-          order: segment.order,
-        })),
         status: "scripting",
         updated_at: new Date(),
       },
@@ -540,17 +914,21 @@ export async function generateScriptFromLayout(eventId: string) {
     // Revalidate paths
     revalidatePath(`/events/${eventId}`);
     revalidatePath(`/event-creation?eventId=${eventId}`);
+    revalidatePath(`/event/${eventId}`);
 
     return {
       success: true,
       segments: createdSegments,
-      message: "Script generated from layout successfully",
+      message: "Script generated from JSON layout successfully",
     };
   } catch (error) {
-    console.error("Error generating script from layout:", error);
+    console.error("Error generating script from JSON layout:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to generate script from layout",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to generate script from JSON layout",
     };
   }
 }
@@ -559,7 +937,7 @@ export async function generateScriptFromLayout(eventId: string) {
  * Generate appropriate content for a segment based on its type
  */
 function generateContentForSegmentType(
-  type: string,
+  type: SegmentType,
   name: string,
   eventTitle: string,
   eventType: string,
@@ -582,10 +960,14 @@ function generateContentForSegmentType(
       return `We now have ${duration} minutes for questions and answers. [PAUSE=300] If you have a question, please raise your hand or use the chat function, and I'll do my best to address as many questions as possible. [PAUSE=400] Let's begin with our first question.`;
 
     case "break":
-      return `We'll now take a ${duration}-minute break for refreshments and networking. [PAUSE=300] Please be back in your seats by ${getTimeAfterMinutes(duration)} so we can continue with our program. [PAUSE=400] Enjoy your break!`;
+      return `We'll now take a ${duration}-minute break for refreshments and networking. [PAUSE=300] Please be back in your seats by ${getTimeAfterMinutes(
+        duration
+      )} so we can continue with our program. [PAUSE=400] Enjoy your break!`;
 
     case "agenda":
-      return `Let me walk you through today's agenda. [PAUSE=300] We have a comprehensive program planned for the next few hours, including presentations, discussions, and interactive sessions. [PAUSE=400] Our event will conclude by ${getTimeAfterMinutes(duration * 4)}.`;
+      return `Let me walk you through today's agenda. [PAUSE=300] We have a comprehensive program planned for the next few hours, including presentations, discussions, and interactive sessions. [PAUSE=400] Our event will conclude by ${getTimeAfterMinutes(
+        duration * 4
+      )}.`;
 
     case "conclusion":
       return `As we come to the end of ${eventTitle}, I want to thank you all for your active participation and engagement. [PAUSE=400] We hope you found value in today's proceedings and will apply the insights gained. [PAUSE=300] Thank you once again, and we look forward to seeing you at future events!`;
@@ -610,5 +992,5 @@ function generateContentForSegmentType(
 function getTimeAfterMinutes(minutes: number): string {
   const now = new Date();
   now.setMinutes(now.getMinutes() + minutes);
-  return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

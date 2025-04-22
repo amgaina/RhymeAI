@@ -16,6 +16,7 @@ CREATE TABLE "events" (
     "voice_settings" JSONB,
     "language" TEXT NOT NULL DEFAULT 'English',
     "script_segments" JSONB[],
+    "event_layout" JSONB,
     "has_presentation" BOOLEAN NOT NULL DEFAULT false,
     "presentation_slides" JSONB,
     "recording_devices" JSONB,
@@ -43,15 +44,46 @@ CREATE TABLE "users" (
 );
 
 -- CreateTable
+CREATE TABLE "event_layout" (
+    "id" SERIAL NOT NULL,
+    "event_id" INTEGER NOT NULL,
+    "total_duration" INTEGER NOT NULL,
+    "layout_version" INTEGER NOT NULL DEFAULT 1,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    "last_generated_by" TEXT,
+    "chat_context" TEXT,
+
+    CONSTRAINT "event_layout_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "layout_segments" (
+    "id" TEXT NOT NULL,
+    "layout_id" INTEGER NOT NULL,
+    "name" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
+    "duration" INTEGER NOT NULL,
+    "order" INTEGER NOT NULL,
+    "custom_properties" JSONB,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "layout_segments_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "script_segments" (
     "id" SERIAL NOT NULL,
     "event_id" INTEGER NOT NULL,
+    "layout_segment_id" TEXT,
     "segment_type" TEXT NOT NULL,
     "content" TEXT NOT NULL,
     "audio_url" TEXT,
     "status" TEXT NOT NULL DEFAULT 'draft',
-    "timing" INTEGER,
-    "order" INTEGER NOT NULL,
+    "timing" INTEGER NOT NULL DEFAULT 0,
+    "order" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -103,7 +135,22 @@ CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 CREATE INDEX "users_user_id_idx" ON "users"("user_id");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "event_layout_event_id_key" ON "event_layout"("event_id");
+
+-- CreateIndex
+CREATE INDEX "event_layout_event_id_idx" ON "event_layout"("event_id");
+
+-- CreateIndex
+CREATE INDEX "layout_segments_layout_id_idx" ON "layout_segments"("layout_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "layout_segments_layout_id_order_key" ON "layout_segments"("layout_id", "order");
+
+-- CreateIndex
 CREATE INDEX "script_segments_event_id_idx" ON "script_segments"("event_id");
+
+-- CreateIndex
+CREATE INDEX "script_segments_layout_segment_id_idx" ON "script_segments"("layout_segment_id");
 
 -- CreateIndex
 CREATE INDEX "user_analytics_user_id_idx" ON "user_analytics"("user_id");
@@ -130,7 +177,16 @@ CREATE INDEX "chat_messages_message_id_idx" ON "chat_messages"("message_id");
 ALTER TABLE "events" ADD CONSTRAINT "events_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("user_id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "event_layout" ADD CONSTRAINT "event_layout_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("event_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "layout_segments" ADD CONSTRAINT "layout_segments_layout_id_fkey" FOREIGN KEY ("layout_id") REFERENCES "event_layout"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "script_segments" ADD CONSTRAINT "script_segments_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("event_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "script_segments" ADD CONSTRAINT "script_segments_layout_segment_id_fkey" FOREIGN KEY ("layout_segment_id") REFERENCES "layout_segments"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "user_analytics" ADD CONSTRAINT "user_analytics_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("user_id") ON DELETE RESTRICT ON UPDATE CASCADE;

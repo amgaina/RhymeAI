@@ -1,7 +1,26 @@
 import { createEvent, finalizeEvent } from "@/app/actions/event";
-import { generateEventLayout, updateEventLayoutSegment } from "@/app/actions/event/layout";
+import {
+  generateEventLayout,
+  updateEventLayoutSegment,
+  addLayoutSegment,
+  deleteLayoutSegment,
+  generateScriptFromLayout,
+} from "@/app/actions/event/layout";
 import { tool } from "ai";
 import { z } from "zod";
+import { google } from "@ai-sdk/google";
+import { generateText } from "ai";
+import { LayoutSegment } from "@/types/layout";
+
+// Types for layout generation
+type LayoutSegmentInput = {
+  name: string;
+  type: string;
+  description: string;
+  duration: number;
+  order: number;
+  customProperties?: Record<string, any>;
+};
 
 /**
  * Tool for storing event data collected during conversation
@@ -97,6 +116,7 @@ export const storeEventDataTool = tool({
       const result = await createEvent(formData);
 
       if (result.success) {
+        // link chat to event
         return {
           success: true,
           message: result.message || "Event created successfully",
@@ -166,6 +186,348 @@ export const generateEventLayoutTool = tool({
 });
 
 /**
+ * Tool for generating event layout with LLM
+ */
+export const generateEventLayoutWithLLMTool = tool({
+  description:
+    "Generate a customized event layout using AI based on event details and conversation context",
+  parameters: z.object({
+    eventId: z.string(),
+    conversationContext: z
+      .string()
+      .optional()
+      .describe(
+        "Relevant parts of the conversation to inform layout generation"
+      ),
+    eventType: z.string().optional(),
+    audience: z.string().optional(),
+    purpose: z.string().optional(),
+    specificRequests: z.string().optional(),
+    totalDuration: z.number().optional(),
+  }),
+  execute: async (params) => {
+    console.log("Generating AI-powered event layout:", params);
+
+    try {
+      // Get event details first
+      const eventIdNum = parseInt(params.eventId, 10);
+      if (isNaN(eventIdNum)) {
+        return {
+          success: false,
+          error: "Invalid event ID format",
+        };
+      }
+
+      // Assuming a function to get event details exists
+      const event = await getEventDetails(params.eventId);
+      if (!event) {
+        return {
+          success: false,
+          error: "Event not found",
+        };
+      }
+
+      // Prepare context for the LLM
+      const prompt = generateLayoutPrompt(
+        event,
+        params.conversationContext || "",
+        params.specificRequests || "",
+        params.audience || "",
+        params.purpose || "",
+        params.totalDuration || guessEventDuration(event.event_type)
+      );
+
+      // Call LLM to generate layout
+      // const layoutResponse = await google.chat("gemini-pro", {
+      //   content: [
+      //     {
+      //       role: "system",
+      //       content:
+      //         "You are an event planning expert assistant. Create a detailed event layout with appropriate segments, timings, and descriptions.",
+      //     },
+      //     { role: "user", content: prompt },
+      //   ],
+      //   temperature: 0.7,
+      // });
+
+      const { text: layoutResponse } = await generateText({
+        model: google("gemini-pro", {}),
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are an event planning expert assistant. Create a detailed event layout with appropriate segments, timings, and descriptions.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.7,
+      });
+
+      // Parse the response
+      if (!layoutResponse) {
+        throw new Error("Failed to get layout from LLM");
+      }
+      const layoutContent = layoutResponse;
+
+      // Parse the JSON response
+      const layoutData = JSON.parse(layoutContent);
+
+      // Validate the layout data
+      if (!layoutData.segments || !Array.isArray(layoutData.segments)) {
+        throw new Error("Invalid layout format returned from LLM");
+      }
+
+      // Convert the LLM output to our layout format
+      const segments = layoutData.segments.map(
+        (segment: any, index: number) => ({
+          name: segment.name,
+          type: segment.type,
+          description: segment.description || `${segment.name} segment`,
+          duration: segment.duration || 10, // Default duration if missing
+          order: segment.order || index + 1,
+          customProperties: segment.notes
+            ? { notes: segment.notes }
+            : undefined,
+        })
+      );
+
+      // Calculate total duration
+      const totalDuration = segments.reduce(
+        (sum: number, segment: any) => sum + segment.duration,
+        0
+      );
+
+      // Store the layout in the database through our server action
+      const result = await storeGeneratedLayout(
+        params.eventId,
+        segments,
+        totalDuration,
+        params.conversationContext || ""
+      );
+
+      if (result.success) {
+        return {
+          success: true,
+          layout: result.layout,
+          message: "AI-generated event layout created successfully",
+          llmContext:
+            layoutData.reasoning ||
+            "Layout generated based on event type and requirements",
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error || "Failed to store AI-generated layout",
+        };
+      }
+    } catch (error) {
+      console.error("Error generating layout with LLM:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to generate event layout with AI",
+      };
+    }
+  },
+});
+
+/**
+ * Generate a prompt for the LLM to create an event layout
+ */
+function generateLayoutPrompt(
+  event: any,
+  conversationContext: string,
+  specificRequests: string,
+  audience: string,
+  purpose: string,
+  totalDuration: number
+): string {
+  return `
+Create a detailed event layout for "${event.title}" which is a ${
+    event.event_type
+  }.
+The event will last approximately ${totalDuration} minutes in total.
+
+${event.description ? `Event description: ${event.description}` : ""}
+${audience ? `Target audience: ${audience}` : ""}
+${purpose ? `Event purpose: ${purpose}` : ""}
+${specificRequests ? `Specific requirements: ${specificRequests}` : ""}
+
+${
+  conversationContext
+    ? `Additional context from conversation: ${conversationContext}`
+    : ""
+}
+
+Please create a JSON object with an array of segments. Each segment should have:
+- name: A concise title for the segment
+- type: The type of segment (introduction, keynote, panel, break, q_and_a, conclusion, presentation, demo, etc)
+- description: A brief description of what happens in this segment
+- duration: The length in minutes
+- order: The sequence number of this segment
+- notes: Any specific notes or guidance for this segment
+
+Also include a "reasoning" field explaining why you structured the layout this way.
+
+The JSON should follow this format:
+{
+  "segments": [
+    {
+      "name": "Welcome and Introduction",
+      "type": "introduction",
+      "description": "Opening remarks and welcome to attendees",
+      "duration": 10,
+      "order": 1,
+      "notes": "Keep energetic and brief"
+    },
+    ...
+  ],
+  "reasoning": "This layout was designed to..."
+}
+`;
+}
+
+/**
+ * Estimate event duration based on event type
+ */
+function guessEventDuration(eventType: string): number {
+  const type = eventType?.toLowerCase() || "general";
+
+  if (type.includes("conference")) return 180; // 3 hours
+  if (type.includes("webinar")) return 90; // 1.5 hours
+  if (type.includes("workshop")) return 120; // 2 hours
+  if (type.includes("meeting")) return 60; // 1 hour
+  if (type.includes("seminar")) return 120; // 2 hours
+
+  return 60; // Default to 1 hour
+}
+
+/**
+ * Store LLM-generated layout in the database
+ */
+async function storeGeneratedLayout(
+  eventId: string,
+  segments: LayoutSegmentInput[],
+  totalDuration: number,
+  chatContext: string
+) {
+  try {
+    const eventIdNum = parseInt(eventId, 10);
+    if (isNaN(eventIdNum)) {
+      return {
+        success: false,
+        error: "Invalid event ID format",
+      };
+    }
+
+    const { db } = await import("@/lib/db");
+
+    // Create the layout in the database
+    const layout = await db.event_layout.upsert({
+      where: {
+        event_id: eventIdNum,
+      },
+      update: {
+        total_duration: totalDuration,
+        layout_version: { increment: 1 },
+        updated_at: new Date(),
+        last_generated_by: "gpt-4",
+        chat_context: chatContext,
+      },
+      create: {
+        event_id: eventIdNum,
+        total_duration: totalDuration,
+        last_generated_by: "gpt-4",
+        chat_context: chatContext,
+      },
+    });
+
+    // Delete any existing segments for this layout
+    await db.layout_segments.deleteMany({
+      where: {
+        layout_id: layout.id,
+      },
+    });
+
+    // Create new segments
+    const createdSegments = await Promise.all(
+      segments.map((segment) =>
+        db.layout_segments.create({
+          data: {
+            layout_id: layout.id,
+            name: segment.name,
+            type: segment.type,
+            description: segment.description,
+            duration: segment.duration,
+            order: segment.order,
+            custom_properties: segment.customProperties || {},
+          },
+        })
+      )
+    );
+
+    // Update event status
+    await db.events.update({
+      where: {
+        event_id: eventIdNum,
+      },
+      data: {
+        status: "layout_ready",
+        updated_at: new Date(),
+      },
+    });
+
+    // Revalidate paths
+    const { revalidatePath } = await import("next/cache");
+    revalidatePath(`/events/${eventId}`);
+    revalidatePath(`/event-creation?eventId=${eventId}`);
+    revalidatePath(`/event/${eventId}`);
+
+    return {
+      success: true,
+      layout: {
+        id: layout.id,
+        totalDuration,
+        segments: createdSegments,
+      },
+      message: "Layout stored successfully",
+    };
+  } catch (error) {
+    console.error("Error storing LLM-generated layout:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to store generated layout",
+    };
+  }
+}
+
+/**
+ * Helper function to get event details
+ */
+async function getEventDetails(eventId: string) {
+  try {
+    const eventIdNum = parseInt(eventId, 10);
+    if (isNaN(eventIdNum)) return null;
+
+    const { db } = await import("@/lib/db");
+
+    return await db.events.findUnique({
+      where: {
+        event_id: eventIdNum,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching event details:", error);
+    return null;
+  }
+}
+
+/**
  * Tool for updating event layout segments
  */
 export const updateLayoutSegmentTool = tool({
@@ -196,7 +558,7 @@ export const updateLayoutSegmentTool = tool({
       // Call the server action to update the layout segment
       const result = await updateEventLayoutSegment(
         params.eventId,
-        params.segmentIndex,
+        params.segmentIndex.toString(),
         updates
       );
 
@@ -263,10 +625,250 @@ export const finalizeEventTool = tool({
   },
 });
 
+/**
+ * Tools for event layout management
+ */
+export const eventLayoutTools = [
+  {
+    type: "function",
+    function: {
+      name: "generateEventLayout",
+      description: "Generates a default layout for an event based on its type",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: {
+            type: "string",
+            description: "The ID of the event for which to generate a layout",
+          },
+        },
+        required: ["eventId"],
+      },
+    },
+    execute: async ({ eventId }: { eventId: string }) => {
+      try {
+        const result = await generateEventLayout(eventId);
+        return result;
+      } catch (error) {
+        console.error("Error executing generateEventLayout:", error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "updateLayoutSegment",
+      description: "Updates a specific segment in an event's layout",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: {
+            type: "string",
+            description: "The ID of the event containing the layout",
+          },
+          segmentId: {
+            type: "string",
+            description: "The ID of the segment to update",
+          },
+          updates: {
+            type: "object",
+            description: "The properties to update on the segment",
+            properties: {
+              name: {
+                type: "string",
+                description: "The display name of the segment",
+              },
+              type: {
+                type: "string",
+                description:
+                  "The type of segment (introduction, keynote, etc.)",
+              },
+              description: {
+                type: "string",
+                description: "A brief description of the segment",
+              },
+              duration: {
+                type: "number",
+                description: "The duration of the segment in minutes",
+              },
+              order: {
+                type: "number",
+                description: "The order of the segment in the event flow",
+              },
+            },
+          },
+        },
+        required: ["eventId", "segmentId", "updates"],
+      },
+    },
+    execute: async ({
+      eventId,
+      segmentId,
+      updates,
+    }: {
+      eventId: string;
+      segmentId: string;
+      updates: Partial<LayoutSegment>;
+    }) => {
+      try {
+        const result = await updateEventLayoutSegment(
+          eventId,
+          segmentId,
+          updates
+        );
+        return result;
+      } catch (error) {
+        console.error("Error executing updateLayoutSegment:", error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "addLayoutSegment",
+      description: "Adds a new segment to an event's layout",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: {
+            type: "string",
+            description: "The ID of the event containing the layout",
+          },
+          segment: {
+            type: "object",
+            description: "The new segment to add",
+            properties: {
+              name: {
+                type: "string",
+                description: "The display name of the segment",
+              },
+              type: {
+                type: "string",
+                description:
+                  "The type of segment (introduction, keynote, etc.)",
+              },
+              description: {
+                type: "string",
+                description: "A brief description of the segment",
+              },
+              duration: {
+                type: "number",
+                description: "The duration of the segment in minutes",
+              },
+              order: {
+                type: "number",
+                description: "The order of the segment in the event flow",
+              },
+            },
+            required: ["name", "type", "description", "duration", "order"],
+          },
+        },
+        required: ["eventId", "segment"],
+      },
+    },
+    execute: async ({
+      eventId,
+      segment,
+    }: {
+      eventId: string;
+      segment: Omit<LayoutSegment, "id">;
+    }) => {
+      try {
+        const result = await addLayoutSegment(eventId, segment);
+        return result;
+      } catch (error) {
+        console.error("Error executing addLayoutSegment:", error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "deleteLayoutSegment",
+      description: "Deletes a segment from an event's layout",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: {
+            type: "string",
+            description: "The ID of the event containing the layout",
+          },
+          segmentId: {
+            type: "string",
+            description: "The ID of the segment to delete",
+          },
+        },
+        required: ["eventId", "segmentId"],
+      },
+    },
+    execute: async ({
+      eventId,
+      segmentId,
+    }: {
+      eventId: string;
+      segmentId: string;
+    }) => {
+      try {
+        const result = await deleteLayoutSegment(eventId, segmentId);
+        return result;
+      } catch (error) {
+        console.error("Error executing deleteLayoutSegment:", error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generateScriptFromLayout",
+      description: "Generates script segments from an event's layout",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: {
+            type: "string",
+            description: "The ID of the event containing the layout",
+          },
+        },
+        required: ["eventId"],
+      },
+    },
+    execute: async ({ eventId }: { eventId: string }) => {
+      try {
+        const result = await generateScriptFromLayout(eventId);
+        return result;
+      } catch (error) {
+        console.error("Error executing generateScriptFromLayout:", error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+  },
+];
+
 // Export all event tools
 export const eventTools = {
   storeEventDataTool,
   generateEventLayoutTool,
+  generateEventLayoutWithLLMTool, // Add new LLM-powered tool
   updateLayoutSegmentTool,
   finalizeEventTool,
+  eventLayoutTools,
 };
