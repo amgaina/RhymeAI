@@ -18,20 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { EventData } from "@/app/actions/event";
 
 interface EventSettingsProps {
-  event: {
-    id: string;
-    name: string;
-    type: string;
-    date: string;
-    location: string;
-    description: string;
-    voiceSettings: {
-      type: string;
-      language: string;
-    };
-  };
+  event: EventData;
   onSaveSettings: (updatedEvent: any) => void;
 }
 
@@ -43,8 +33,8 @@ export default function EventSettings({
     name: event.name,
     type: event.type,
     date: event.date,
-    location: event.location,
-    description: event.description,
+    location: event.location || "",
+    description: event.description || "",
     voiceSettings: {
       type: event.voiceSettings.type,
       language: event.voiceSettings.language,

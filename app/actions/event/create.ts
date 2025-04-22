@@ -3,12 +3,6 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import {
-  VoiceSettings,
-  VoiceSettingsAccent,
-  VoiceSettingsGender,
-} from "./types";
-import { VoiceSettingsTone } from "@/types/event";
 import { auth } from "@clerk/nextjs/server";
 
 // Event validation schema

@@ -15,7 +15,6 @@ import {
   VoiceSettingsTone,
 } from "@/types/event";
 // Import server-specific types
-import { VoiceSettings as ServerVoiceSettings } from "@/app/actions/event/types";
 
 export type EventFormData = {
   eventName: string;
@@ -100,6 +99,8 @@ export default function useEventCreation() {
         content: `Welcome to ${eventName}! I'm your AI host, and I'm excited to guide you through today's program. We have an incredible lineup of speakers, engaging sessions, and valuable networking opportunities planned for you.`,
         audio: "mock-audio-url-1.mp3",
         status: "generated" as ScriptSegmentStatus,
+        timing: 30, // Add the missing timing property
+        presentationSlide: null, // Add the missing presentationSlide property
         order: 1,
       },
       {
@@ -108,6 +109,8 @@ export default function useEventCreation() {
         content: `Let me walk you through today's agenda. We'll start with our keynote presentation, followed by breakout sessions on various topics. After lunch, we'll have panel discussions, and we'll conclude with networking opportunities and closing remarks.`,
         audio: null,
         status: "draft" as ScriptSegmentStatus,
+        timing: 25, // Add timing
+        presentationSlide: null, // Add presentationSlide
         order: 2,
       },
       {
@@ -116,6 +119,8 @@ export default function useEventCreation() {
         content: `I'm pleased to introduce our keynote speaker, Dr. Jane Smith, who is a renowned expert in artificial intelligence and machine learning. Dr. Smith is the Chief Technology Officer at Tech Innovations and has published numerous research papers on AI applications in healthcare.`,
         audio: null,
         status: "draft" as ScriptSegmentStatus,
+        timing: 40, // Add timing
+        presentationSlide: null, // Add presentationSlide
         order: 3,
       },
     ]);
@@ -163,6 +168,8 @@ export default function useEventCreation() {
         content: `Welcome to ${eventName}! I'm your AI host, and I'm delighted to guide you through today's ${eventType.toLowerCase()}. ${eventDescription}`,
         audio: null,
         status: "draft" as ScriptSegmentStatus,
+        timing: 30,
+        presentationSlide: null,
         order: 1,
       },
       {
@@ -171,6 +178,8 @@ export default function useEventCreation() {
         content: `Let me walk you through today's agenda. We have carefully designed this ${eventType.toLowerCase()} to provide maximum value and engagement for all attendees.`,
         audio: null,
         status: "draft" as ScriptSegmentStatus,
+        timing: 25,
+        presentationSlide: null,
         order: 2,
       },
     ];
@@ -238,7 +247,7 @@ export default function useEventCreation() {
 
           // Create a server-compatible voice settings object
           // Make sure all required fields have non-undefined values
-          const voiceSettings: ServerVoiceSettings = {
+          const voiceSettings: ClientVoiceSettings = {
             gender: "neutral", // Required field
             age: "middle-aged",
             tone: tone, // Required field

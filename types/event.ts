@@ -30,7 +30,12 @@ export type ScriptSegmentStatus =
   | "draft"
   | "editing"
   | "generating"
-  | "generated";
+  | "generated"
+  | "failed"
+  | "approved"
+  | "rejected"
+  | "published"
+  | "archived";
 
 export interface ScriptSegment {
   id: number;
@@ -39,6 +44,8 @@ export interface ScriptSegment {
   audio: string | null;
   status: ScriptSegmentStatus;
   order: number;
+  timing: number;
+  presentationSlide: string | null;
 }
 
 // Event types

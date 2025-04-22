@@ -14,7 +14,7 @@ import {
   Presentation,
   CheckCircle,
 } from "lucide-react";
-import { ScriptSegment } from "./ScriptManager";
+import { ScriptSegment } from "@/types/event";
 
 interface EventDashboardProps {
   segments: ScriptSegment[];

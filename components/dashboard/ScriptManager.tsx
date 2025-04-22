@@ -23,16 +23,7 @@ import {
   Trash2,
 } from "lucide-react";
 import EnhancedAudioPlayer from "./EnhancedAudioPlayer";
-
-export interface ScriptSegment {
-  id: number;
-  type: string;
-  content: string;
-  audio?: string | null;
-  status: "draft" | "editing" | "generating" | "generated" | "failed";
-  timing?: number;
-  presentationSlide?: string;
-}
+import { ScriptSegment } from "@/types/event";
 
 interface ScriptManagerProps {
   segments: ScriptSegment[];

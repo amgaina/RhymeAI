@@ -13,37 +13,23 @@ import {
 } from "lucide-react";
 import { RhymeAIChat } from "@/components/RhymeAIChat";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EventData, getEvents } from "@/app/actions/event"; // Import the EventResponse type
+import { useToast } from "@/components/ui/use-toast";
 
-// Import our new modular components
+// Import our modular components
 import EventList, { EventItem } from "@/components/dashboard/EventList";
 import { EventHeader } from "@/components/dashboard/EventHeader";
 import EventOverview from "@/components/dashboard/EventOverview";
-import ScriptManager, {
-  ScriptSegment,
-} from "@/components/dashboard/ScriptManager";
+import ScriptManager from "@/components/dashboard/ScriptManager";
 import PresentationManager from "@/components/dashboard/PresentationManager";
 import EventDashboard from "@/components/dashboard/EventDashboard";
 import DeviceManager from "@/components/dashboard/DeviceManager";
 import EventSettings from "@/components/dashboard/EventSettings";
 import EnhancedAudioPlayer from "@/components/dashboard/EnhancedAudioPlayer";
-
-interface EventData {
-  id: string;
-  name: string;
-  type: string;
-  date: string;
-  location: string;
-  description: string;
-  voiceSettings: {
-    type: string;
-    language: string;
-  };
-  scriptSegments: ScriptSegment[];
-  createdAt: string;
-  status: string;
-}
+import { ScriptSegment } from "@/types/event";
 
 export default function Dashboard() {
+  const { toast } = useToast();
   const [events, setEvents] = useState<EventData[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
   const [isEventRunning, setIsEventRunning] = useState(false);
@@ -93,91 +79,109 @@ export default function Dashboard() {
     title: string;
     scriptText: string;
   } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load events from localStorage on component mount
+  // Load events from the database on component mount
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedEvents = JSON.parse(
-        localStorage.getItem("rhymeai-events") || "[]"
-      );
-      setEvents([
-        ...savedEvents,
-        {
-          id: "1",
-          name: "Tech Conference 2025",
-          date: "June 15-17, 2025",
-          type: "Conference",
-          location: "San Francisco, CA",
-          description:
-            "Annual technology conference featuring the latest innovations",
-          voiceSettings: {
-            type: "Professional",
-            language: "English",
-          },
-          scriptSegments: [
-            {
-              id: 1,
-              type: "introduction",
-              content:
-                "Welcome to Tech Conference 2025! I'm your AI host, and I'm excited to guide you through this amazing event.",
-              audio: "mock-audio-url-1.mp3",
-              status: "generated",
-              timing: 45,
-              presentationSlide: "slide-intro.jpg",
+    async function loadEvents() {
+      try {
+        setIsLoading(true);
+        const result = await getEvents();
+
+        if (result.success && result.events) {
+          // Now we need to transform the server response to match your client-side needs
+          // Specifically, we need to adapt scriptSegments to have the expected properties
+          const clientEvents: EventData[] = result.events.map((event) => ({
+            id: String(event.event_id),
+            name: event.title,
+            type: event.event_type,
+            date: event.event_date.toISOString().split("T")[0],
+            location: event.location,
+            description: event.description,
+            voiceSettings: event.voice_settings as {
+              type: string;
+              language: string;
             },
+            scriptSegments: event.segments.map((segment) => ({
+              id: segment.id,
+              type: segment.segment_type,
+              content: segment.content,
+              status: segment.status as
+                | "draft"
+                | "editing"
+                | "generating"
+                | "generated",
+              timing: segment.timing || 0,
+              order: segment.order,
+              audio: segment.audio_url,
+              presentationSlide: null,
+            })),
+            createdAt: event.created_at.toISOString(),
+            status: event.status,
+            hasPresentation: event.has_presentation,
+            playCount: event.play_count,
+          }));
+
+          setEvents(clientEvents);
+        } else {
+          console.error("Failed to load events:", result.error);
+          toast({
+            title: "Error loading events",
+            description: result.error || "Could not load your events",
+            variant: "destructive",
+          });
+
+          // Fallback to mock data if needed with the correct structure
+          setEvents([
             {
-              id: 2,
-              type: "agenda",
-              content:
-                "Let me walk you through today's agenda. We'll start with our keynote presentation, followed by breakout sessions.",
-              audio: "mock-audio-url-2.mp3",
-              status: "generated",
-              timing: 30,
-              presentationSlide: "slide-agenda.jpg",
+              id: "1",
+              name: "Tech Conference 2025",
+              date: "June 15-17, 2025",
+              type: "Conference",
+              location: "San Francisco, CA",
+              description:
+                "Annual technology conference featuring the latest innovations",
+              voiceSettings: {
+                type: "Professional",
+                language: "English",
+              },
+              scriptSegments: [], // Empty array that matches the ScriptSegment type
+              createdAt: "2025-03-15T10:00:00Z",
+              status: "ready",
+              hasPresentation: false,
+              playCount: 0,
             },
-            {
-              id: 3,
-              type: "speaker introduction",
-              content:
-                "Please welcome our keynote speaker, Dr. Jane Smith, CTO of Tech Innovations.",
-              audio: "mock-audio-url-3.mp3",
-              status: "generated",
-              timing: 20,
-              presentationSlide: "slide-speaker.jpg",
-            },
-          ],
-          createdAt: "2025-03-15T10:00:00Z",
-          status: "ready",
-        },
-        {
-          id: "2",
-          name: "Product Launch Webinar",
-          date: "May 5, 2025",
-          type: "Webinar",
-          location: "Virtual",
-          description: "Launching our new product line to the market",
-          voiceSettings: {
-            type: "Energetic",
-            language: "English",
-          },
-          scriptSegments: [],
-          createdAt: "2025-04-01T14:30:00Z",
-          status: "draft",
-        },
-      ]);
+          ]);
+        }
+      } catch (error) {
+        console.error("Error loading events:", error);
+        toast({
+          title: "Error loading events",
+          description: "There was a problem connecting to the server",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
     }
-  }, []);
+
+    loadEvents();
+  }, [toast]);
 
   // Set the first event as selected by default
   useEffect(() => {
     if (events.length > 0 && !selectedEvent) {
       setSelectedEvent(events[0]);
-      calculateTotalDuration(events[0].scriptSegments);
     }
-  }, [events]);
+  }, [events, selectedEvent]);
 
-  // Calculate total duration of script segments
-  const calculateTotalDuration = (segments: ScriptSegment[]) => {
+  // Calculate total duration of script segments - protect against undefined
+  const calculateTotalDuration = (segments: any[] = []) => {
+    if (!segments || !Array.isArray(segments)) {
+      setTotalDuration(0);
+      return;
+    }
+
     const total = segments.reduce(
       (sum, segment) => sum + (segment.timing || 0),
       0
@@ -314,14 +318,7 @@ export default function Dashboard() {
 
     // Simulate slide generation
     setTimeout(() => {
-      setSelectedEvent({
-        ...selectedEvent,
-        scriptSegments: selectedEvent.scriptSegments.map((segment, index) => ({
-          ...segment,
-          presentationSlide:
-            segment.presentationSlide || `slide-${index + 1}.jpg`,
-        })),
-      });
+      setSelectedEvent(selectedEvent);
     }, 2000);
   };
 
@@ -334,7 +331,7 @@ export default function Dashboard() {
     // Calculate time elapsed until the beginning of this segment
     let timeSum = 0;
     for (let i = 0; i < segmentIndex; i++) {
-      timeSum += selectedEvent.scriptSegments[i].timing || 0;
+      timeSum += selectedEvent.scriptSegments[i]?.timing || 0;
     }
 
     setTimeElapsed(timeSum);
@@ -377,6 +374,9 @@ export default function Dashboard() {
       content: "New segment content...",
       status: "draft",
       timing: 30, // Default 30 seconds
+      order: selectedEvent.scriptSegments.length + 1,
+      audio: null,
+      presentationSlide: null,
     };
 
     setSelectedEvent({
@@ -423,19 +423,19 @@ export default function Dashboard() {
     }, 3000);
   };
 
-  // Convert event data to event item format for EventList
+  // Convert event data to event item format for EventList - protect against undefined
   const eventItems: EventItem[] = events.map((event) => ({
     id: event.id,
     name: event.name,
     type: event.type,
     date: event.date,
-    location: event.location,
-    description: event.description,
+    location: event.location || "",
+    description: event.description || "",
     voiceSettings: event.voiceSettings,
-    scriptSegmentsCount: event.scriptSegments.length,
+    scriptSegmentsCount: event.scriptSegments?.length || 0,
     createdAt: event.createdAt,
     status: event.status,
-    duration: event.scriptSegments.reduce(
+    duration: (event.scriptSegments || []).reduce(
       (sum, segment) => sum + (segment.timing || 0),
       0
     ),
@@ -581,7 +581,15 @@ export default function Dashboard() {
         </div>
 
         {/* Events Table or Selected Event Detail */}
-        {!selectedEvent ? (
+        {isLoading ? (
+          // Show loading state
+          <div className="flex items-center justify-center h-40">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
+            <span className="ml-3 text-primary-foreground">
+              Loading events...
+            </span>
+          </div>
+        ) : !selectedEvent ? (
           <EventList
             events={eventItems}
             onSelectEvent={(eventId) => {

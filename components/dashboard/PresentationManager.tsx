@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ScriptSegment } from "./ScriptManager";
+import { ScriptSegment } from "@/types/event";
 
 interface PresentationManagerProps {
   segments: ScriptSegment[];
