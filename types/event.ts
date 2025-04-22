@@ -16,6 +16,7 @@ export type VoiceSettingsAccent =
   | "australian"
   | "indian"
   | "neutral";
+export type VoiceSettingsPitch = "low" | "medium" | "high";
 
 export interface VoiceSettings {
   gender?: VoiceSettingsGender;
@@ -23,6 +24,7 @@ export interface VoiceSettings {
   tone?: VoiceSettingsTone;
   accent?: VoiceSettingsAccent;
   speed?: VoiceSettingsSpeed;
+  pitch?: VoiceSettingsPitch;
 }
 
 // Script segment types
@@ -48,6 +50,16 @@ export interface ScriptSegment {
   presentationSlide: string | null;
 }
 
+// Input type for creating or updating script segments
+export interface ScriptSegmentInput {
+  type: string;
+  content: string;
+  status: ScriptSegmentStatus;
+  audio_url?: string | null;
+  timing?: number | null;
+  order: number;
+}
+
 // Event types
 export interface Event {
   eventId: number;
@@ -60,7 +72,7 @@ export interface Event {
   expectedAttendees?: number;
   voiceSettings?: VoiceSettings;
   language: string;
-  scriptSegments: ScriptSegment[];
-  createdAt: string;
   updatedAt?: string;
+  createdAt: string;
+  scriptSegments: ScriptSegment[];
 }

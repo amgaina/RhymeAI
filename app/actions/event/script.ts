@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { ScriptSegment, ScriptSegmentStatus } from "@/types/event";
-import { ScriptSegmentInput } from "./types";
+import {
+  ScriptSegment,
+  ScriptSegmentInput,
+  ScriptSegmentStatus,
+} from "@/types/event";
 
 /**
  * Generate a complete script for an event
