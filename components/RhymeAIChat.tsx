@@ -11,6 +11,12 @@ import {
   CheckCircle2,
   ListChecks,
   ArrowDown,
+  CircleCheck,
+  CircleDot,
+  Wrench,
+  RotateCw,
+  ArrowDownCircle,
+  Mic2,
 } from "lucide-react";
 import {
   Card,
@@ -20,6 +26,13 @@ import {
   CardDescription,
   CardFooter,
 } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -140,7 +153,12 @@ export function RhymeAIChat({
               toolCall.toolName === "store_event_data" &&
               onEventDataCollected
             ) {
-              const eventData = JSON.parse(toolCall.args);
+              const eventData =
+                typeof toolCall.args === "string"
+                  ? JSON.parse(toolCall.args)
+                  : toolCall.args;
+
+              // Call the callback with the data
               onEventDataCollected(eventData);
 
               // If the eventData has an ID and we don't have an eventId yet, store it
@@ -156,7 +174,10 @@ export function RhymeAIChat({
             }
 
             if (toolCall.toolName === "generate_script" && onScriptGenerated) {
-              const scriptData = JSON.parse(toolCall.args);
+              const scriptData =
+                typeof toolCall.args === "string"
+                  ? JSON.parse(toolCall.args)
+                  : toolCall.args;
               setScriptData(scriptData);
               onScriptGenerated(scriptData);
             }
@@ -573,10 +594,42 @@ export function RhymeAIChat({
                       <Bot className="h-5 w-5" />
                     )}
                   </div>
-                  <div className="markdown-content">
-                    <div className="font-medium text-sm mb-1">
-                      {message.role === "user" ? "You" : "RhymeAI"}
+                  <div className="markdown-content w-full">
+                    <div className="font-medium text-sm mb-1 flex justify-between items-center">
+                      <span>{message.role === "user" ? "You" : "RhymeAI"}</span>
+
+                      {/* Tool usage indicator */}
+                      {message.toolInvocations &&
+                        message.toolInvocations.length > 0 && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground bg-background/50 px-1.5 py-0.5 rounded">
+                                  <Wrench className="h-3 w-3" />
+                                  <span>Tools used</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <div className="text-xs">
+                                  {message.toolInvocations.map((tool) => (
+                                    <div
+                                      key={tool.toolCallId}
+                                      className="flex items-center gap-1 mb-1"
+                                    >
+                                      <CircleCheck className="h-3 w-3 text-green-500" />
+                                      <span>
+                                        {tool.toolName.replace(/_/g, " ")}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                     </div>
+
+                    {/* Message content */}
                     {message.parts
                       ?.filter((part) => part.type !== "source")
                       .map((part, index) => {
@@ -742,9 +795,103 @@ export function RhymeAIChat({
                         }
                         return null;
                       })}
+
+                    {/* Tool calls visualization */}
+                    {message.toolInvocations &&
+                      message.toolInvocations.length > 0 && (
+                        <div className="mt-3 border-t border-muted-foreground/20 pt-2">
+                          <div className="text-xs font-medium mb-1 text-muted-foreground">
+                            Actions taken:
+                          </div>
+                          {message.toolInvocations.map((tool) => (
+                            <div
+                              key={tool.toolCallId}
+                              className="mb-2 text-xs bg-background/50 rounded p-2"
+                            >
+                              <div className="flex items-center gap-1 mb-1 font-medium">
+                                <Wrench className="h-3 w-3" />
+                                <span className="capitalize">
+                                  {tool.toolName.replace(/_/g, " ")}
+                                </span>
+                              </div>
+
+                              {tool.state === "result" ? (
+                                <div className="flex items-center gap-1 text-green-500">
+                                  <CircleCheck className="h-3 w-3" />
+                                  <span>Successfully processed</span>
+                                </div>
+                              ) : tool.state === "partial-call" ? (
+                                <div className="flex items-center gap-1 text-amber-500">
+                                  <RotateCw className="h-3 w-3 animate-spin" />
+                                  <span>Processing...</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 text-red-500">
+                                  <CircleDot className="h-3 w-3" />
+                                  <span>
+                                    Error: {tool.args || "Unknown error"}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Show a preview of the tool args if available */}
+                              {tool.toolName === "store_event_data" && (
+                                <div className="mt-1 overflow-hidden text-ellipsis">
+                                  <div className="text-2xs text-muted-foreground">
+                                    Event:{" "}
+                                    {(() => {
+                                      try {
+                                        const eventData =
+                                          typeof tool.args === "string"
+                                            ? JSON.parse(tool.args)
+                                            : tool.args;
+                                        // Convert the event name to a string
+                                        return typeof eventData?.eventName ===
+                                          "string"
+                                          ? eventData.eventName
+                                          : "Not specified";
+                                      } catch (e) {
+                                        console.error(
+                                          "Error parsing tool args:",
+                                          e
+                                        );
+                                        return "Not specified";
+                                      }
+                                    })()}
+                                  </div>
+                                </div>
+                              )}
+
+                              {tool.toolName === "generate_script" && (
+                                <div className="mt-1 overflow-hidden text-ellipsis">
+                                  <div className="text-2xs text-muted-foreground">
+                                    Sections:{" "}
+                                    {(() => {
+                                      try {
+                                        const eventData =
+                                          typeof tool.args === "string"
+                                            ? JSON.parse(tool.args)
+                                            : tool.args;
+                                        return eventData?.sections?.length || 0;
+                                      } catch (e) {
+                                        console.error(
+                                          "Error parsing tool args:",
+                                          e
+                                        );
+                                        return 0;
+                                      }
+                                    })()}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                   </div>
                 </div>
 
+                {/* Source attribution code remains the same */}
                 {message.parts
                   ?.filter((part) => part.type === "source")
                   .map((part) => (
@@ -794,8 +941,13 @@ export function RhymeAIChat({
           )}
 
           {isLoading && (
-            <div className="flex items-center justify-center py-2">
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <div className="flex items-center justify-center py-4">
+              <div className="bg-primary/5 rounded-lg p-3 flex items-center gap-3">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">
+                  RhymeAI is thinking...
+                </span>
+              </div>
             </div>
           )}
 
@@ -841,37 +993,86 @@ export function RhymeAIChat({
       </CardContent>
 
       {eventContext?.contextType === "event-creation" && (
-        <CardFooter className="flex justify-between border-t p-4 bg-muted/20">
-          <div className="flex gap-2 text-sm text-muted-foreground">
-            <ListChecks className="h-4 w-4" />
-            <span>
-              Fields remaining:{" "}
-              {eventContext.requiredFields.length -
-                Object.values(collectedFields).filter(Boolean).length}
-            </span>
+        <CardFooter className="flex justify-between border-t p-4 bg-primary/5">
+          <div className="flex flex-col gap-1">
+            <div className="flex gap-2 text-sm text-muted-foreground">
+              <ListChecks className="h-4 w-4" />
+              <span>Information collection progress</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-32 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full transition-all duration-300 ease-in-out",
+                    progressPercentage === 100
+                      ? "bg-green-500"
+                      : progressPercentage > 50
+                      ? "bg-amber-500"
+                      : "bg-primary"
+                  )}
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {Object.values(collectedFields).filter(Boolean).length}/
+                {eventContext.requiredFields.length} fields
+              </span>
+            </div>
           </div>
 
-          <Button
-            onClick={handleGenerateScript}
-            disabled={!isDataComplete}
-            className="gap-2"
-            size="sm"
-            variant={isDataComplete ? "default" : "outline"}
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            Generate Script
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleGenerateScript}
+                  disabled={!isDataComplete}
+                  className="gap-2"
+                  size="sm"
+                  variant={isDataComplete ? "default" : "outline"}
+                >
+                  {isDataComplete ? (
+                    <ArrowDownCircle className="h-4 w-4" />
+                  ) : (
+                    <ListChecks className="h-4 w-4" />
+                  )}
+                  {isDataComplete ? "Generate Script" : "Collecting Info..."}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isDataComplete
+                  ? "All required information collected! Click to generate script."
+                  : `Still need ${
+                      eventContext.requiredFields.length -
+                      Object.values(collectedFields).filter(Boolean).length
+                    } more fields`}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </CardFooter>
       )}
 
       {eventContext?.contextType === "script-generation" && scriptData && (
-        <CardFooter className="flex justify-end border-t p-4 bg-muted/20">
+        <CardFooter className="flex justify-between border-t p-4 bg-primary/5">
+          <div className="text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <CircleCheck className="h-4 w-4 text-green-500" />
+              <span>
+                Script generated with{" "}
+                {scriptData.sections?.length ||
+                  scriptData.segments?.length ||
+                  0}{" "}
+                segments
+              </span>
+            </div>
+          </div>
+
           <Button
             onClick={generateAudio}
             className="gap-2"
             size="sm"
             variant="default"
           >
+            <Mic2 className="h-4 w-4" />
             Generate Audio
           </Button>
         </CardFooter>
@@ -880,7 +1081,7 @@ export function RhymeAIChat({
       {showScrollButton && (
         <Button
           onClick={scrollToBottom}
-          className="fixed bottom-24 right-8 bg-primary text-primary-foreground shadow-md hover:bg-primary/90 rounded-full z-10"
+          className="fixed bottom-24 right-8 bg-primary/90 text-primary-foreground shadow-md hover:bg-primary/100 rounded-full z-10 animate-bounce-subtle"
           size="icon"
         >
           <ArrowDown className="h-5 w-5" />

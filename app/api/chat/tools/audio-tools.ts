@@ -43,6 +43,7 @@ export const generateAudioTool = tool({
         },
         body: JSON.stringify({
           segmentId: params.segmentId,
+          eventId: params.eventId,
           voiceSettings: params.voiceSettings,
         }),
       });
@@ -156,6 +157,7 @@ export const batchGenerateAudioTool = tool({
               },
               body: JSON.stringify({
                 segmentId,
+                eventId: params.eventId,
                 voiceSettings: params.voiceSettings,
               }),
             });
@@ -190,7 +192,10 @@ export const batchGenerateAudioTool = tool({
               throw new Error(result.error || "Failed to generate audio");
             }
           } catch (error) {
-            console.error(`Error generating audio for segment ${segmentId}:`, error);
+            console.error(
+              `Error generating audio for segment ${segmentId}:`,
+              error
+            );
             return {
               success: false,
               segmentId,
@@ -214,7 +219,8 @@ export const batchGenerateAudioTool = tool({
       console.error("Error in batch audio generation:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to generate audio",
+        error:
+          error instanceof Error ? error.message : "Failed to generate audio",
       };
     }
   },

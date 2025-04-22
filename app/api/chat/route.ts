@@ -1,7 +1,12 @@
 import { google } from "@ai-sdk/google";
 import { streamText, Message } from "ai";
 import { v4 as uuidv4 } from "uuid";
-import { storeEventDataTool, generateScriptTool } from "./tools";
+import {
+  eventTools,
+  scriptTools,
+  audioTools,
+  presentationTools,
+} from "./tools";
 import { generateSystemPrompt } from "./prompts";
 
 /**
@@ -49,8 +54,22 @@ export async function POST(req: Request) {
     const result = streamText({
       model: google("gemini-2.5-pro-preview-03-25", {}),
       tools: {
-        store_event_data: storeEventDataTool,
-        generate_script: generateScriptTool,
+        // Event tools
+        store_event_data: eventTools.storeEventDataTool,
+        generate_event_layout: eventTools.generateEventLayoutTool,
+        update_layout_segment: eventTools.updateLayoutSegmentTool,
+        finalize_event: eventTools.finalizeEventTool,
+
+        // Script tools
+        generate_script: scriptTools.generateScriptTool,
+        generate_script_from_layout: scriptTools.generateScriptFromLayoutTool,
+
+        // Audio tools
+        generate_audio: audioTools.generateAudioTool,
+        generate_batch_audio: audioTools.batchGenerateAudioTool,
+
+        // Presentation tools
+        generate_presentation: presentationTools.generatePresentationTool,
       },
       messages: messagesWithSystem,
       temperature: 0.5, // Lower temperature for more focused responses

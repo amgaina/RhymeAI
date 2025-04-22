@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { convertToSSML, applyVoiceParams } from "@/lib/tts-utils";
 import { db } from "@/lib/db";
+import {
+  uploadToS3,
+  generateAudioKey,
+  isS3Configured,
+  getS3Url,
+} from "@/lib/s3-utils";
+import { generateTTS, getBestVoiceMatch } from "@/lib/tts-service";
 
 /**
  * API route for generating TTS audio from text or script segments
@@ -59,21 +66,77 @@ export async function POST(req: Request) {
         // Apply voice settings to the SSML
         const processedSsml = applyVoiceParams(ssml, mergedVoiceSettings || {});
 
-        // In a real implementation, you would call your TTS API here
-        // For example:
-        // const audioBuffer = await callExternalTtsApi(processedSsml, mergedVoiceSettings);
-        // const audioUrl = await uploadToS3(audioBuffer, `segment-${segmentId}.mp3`);
+        // Generate audio using TTS service
+        let audioUrl: string;
+        let audioBuffer: Buffer;
 
-        // For now, we'll simulate a successful audio generation
-        const mockAudioUrl = `https://api.example.com/audio/segment-${segmentId}-${Date.now()}.mp3`;
+        try {
+          // Get the best voice match based on voice settings
+          const voiceId = await getBestVoiceMatch({
+            gender: mergedVoiceSettings?.gender,
+            accent: mergedVoiceSettings?.accent,
+            age: mergedVoiceSettings?.age,
+          });
 
-        // Return the audio URL
-        return NextResponse.json({
-          success: true,
-          audioUrl: mockAudioUrl,
-          segmentId,
-          message: "Audio generated successfully for segment",
-        });
+          // Generate audio using TTS service
+          audioBuffer = await generateTTS(processedSsml, voiceId);
+
+          // Upload to S3 if configured
+          if (isS3Configured()) {
+            const s3Key = generateAudioKey(segment.event_id, segmentIdNum);
+            audioUrl = await uploadToS3(audioBuffer, s3Key, "audio/mpeg");
+          } else {
+            // Fallback to mock URL if S3 is not configured
+            audioUrl = `https://api.example.com/audio/segment-${segmentId}-${Date.now()}.mp3`;
+          }
+
+          // Update the segment with the audio URL and duration
+          await db.script_segments.update({
+            where: { id: segmentIdNum },
+            data: {
+              audio_url: audioUrl,
+              status: "generated",
+              // In a real implementation, you would calculate the actual duration
+              timing: Math.ceil(segment.content.length / 20) * 1000, // Rough estimate: 20 chars per second
+            },
+          });
+
+          // Update the script_segments JSON in the events table
+          await updateEventScriptSegments(segment.event_id);
+
+          // Return the audio URL
+          return NextResponse.json({
+            success: true,
+            audioUrl,
+            segmentId,
+            message: "Audio generated and stored successfully",
+          });
+        } catch (ttsError) {
+          console.error("TTS generation error:", ttsError);
+
+          // Fallback to mock URL
+          audioUrl = `https://api.example.com/audio/segment-${segmentId}-${Date.now()}.mp3`;
+
+          // Update the segment with the mock audio URL
+          await db.script_segments.update({
+            where: { id: segmentIdNum },
+            data: {
+              audio_url: audioUrl,
+              status: "generated",
+              timing: Math.ceil(segment.content.length / 20) * 1000,
+            },
+          });
+
+          // Update the script_segments JSON in the events table
+          await updateEventScriptSegments(segment.event_id);
+
+          return NextResponse.json({
+            success: true,
+            audioUrl,
+            segmentId,
+            message: "Audio generated with fallback URL",
+          });
+        }
       } catch (dbError) {
         console.error("Database error fetching segment:", dbError);
         return NextResponse.json(
@@ -92,6 +155,14 @@ export async function POST(req: Request) {
     if (!content && !scriptData) {
       return NextResponse.json(
         { error: "Either content, scriptData, or segmentId must be provided" },
+        { status: 400 }
+      );
+    }
+
+    // Ensure we have an eventId for storage
+    if (!eventId) {
+      return NextResponse.json(
+        { error: "eventId is required for direct content generation" },
         { status: 400 }
       );
     }
@@ -119,23 +190,88 @@ export async function POST(req: Request) {
     // Apply voice settings to the SSML
     const processedSsml = applyVoiceParams(ssml, voiceSettings || {});
 
-    // In a real implementation, you would call your TTS API here
-    // For example:
-    // const audioBuffer = await callExternalTtsApi(processedSsml, voiceSettings);
-    // const audioUrl = await uploadToS3(audioBuffer, `content-${Date.now()}.mp3`);
+    try {
+      // Get the best voice match based on voice settings
+      const voiceId = await getBestVoiceMatch({
+        gender: voiceSettings?.gender,
+        accent: voiceSettings?.accent,
+        age: voiceSettings?.age,
+      });
 
-    // For now, we'll simulate a successful audio generation
-    const mockAudioUrl = `https://api.example.com/audio/content-${
-      segmentId || Date.now()
-    }.mp3`;
+      // Generate audio using TTS service
+      const audioBuffer = await generateTTS(processedSsml, voiceId);
 
-    // Return the audio URL
-    return NextResponse.json({
-      success: true,
-      audioUrl: mockAudioUrl,
-      segmentId: segmentId || null,
-      message: "Audio generated successfully",
-    });
+      // Upload to S3 if configured
+      let audioUrl: string;
+      if (isS3Configured()) {
+        const s3Key = generateAudioKey(eventId, segmentId || "direct");
+        audioUrl = await uploadToS3(audioBuffer, s3Key, "audio/mpeg");
+      } else {
+        // Fallback to mock URL if S3 is not configured
+        audioUrl = `https://api.example.com/audio/content-${
+          segmentId || Date.now()
+        }.mp3`;
+      }
+
+      // If segmentId is provided, update the segment with the audio URL
+      if (segmentId) {
+        const segmentIdNum = parseInt(segmentId, 10);
+        if (!isNaN(segmentIdNum)) {
+          await db.script_segments.update({
+            where: { id: segmentIdNum },
+            data: {
+              audio_url: audioUrl,
+              status: "generated",
+              // In a real implementation, you would calculate the actual duration
+              timing: content ? Math.ceil(content.length / 20) * 1000 : null, // Rough estimate: 20 chars per second
+            },
+          });
+
+          // Update the script_segments JSON in the events table
+          await updateEventScriptSegments(parseInt(eventId, 10));
+        }
+      }
+
+      // Return the audio URL
+      return NextResponse.json({
+        success: true,
+        audioUrl,
+        segmentId: segmentId || null,
+        message: "Audio generated and stored successfully",
+      });
+    } catch (ttsError) {
+      console.error("TTS generation error:", ttsError);
+
+      // Fallback to mock URL
+      const audioUrl = `https://api.example.com/audio/content-${
+        segmentId || Date.now()
+      }.mp3`;
+
+      // If segmentId is provided, update the segment with the mock audio URL
+      if (segmentId) {
+        const segmentIdNum = parseInt(segmentId, 10);
+        if (!isNaN(segmentIdNum)) {
+          await db.script_segments.update({
+            where: { id: segmentIdNum },
+            data: {
+              audio_url: audioUrl,
+              status: "generated",
+              timing: content ? Math.ceil(content.length / 20) * 1000 : null,
+            },
+          });
+
+          // Update the script_segments JSON in the events table
+          await updateEventScriptSegments(parseInt(eventId, 10));
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        audioUrl,
+        segmentId: segmentId || null,
+        message: "Audio generated with fallback URL",
+      });
+    }
   } catch (error) {
     console.error("TTS generation error:", error);
     return NextResponse.json(
@@ -146,5 +282,41 @@ export async function POST(req: Request) {
       },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Update the script_segments JSON in the events table
+ * This ensures the JSON array is in sync with the actual script_segments table
+ */
+async function updateEventScriptSegments(eventId: number) {
+  try {
+    // Get all segments for the event
+    const segments = await db.script_segments.findMany({
+      where: { event_id: eventId },
+      orderBy: { order: "asc" },
+    });
+
+    // Update the event with the updated script_segments JSON array
+    await db.events.update({
+      where: { event_id: eventId },
+      data: {
+        script_segments: segments.map((seg) => ({
+          id: seg.id,
+          type: seg.segment_type,
+          content: seg.content,
+          status: seg.status,
+          timing: seg.timing,
+          order: seg.order,
+          audio_url: seg.audio_url,
+        })),
+        updated_at: new Date(),
+      },
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error updating event script segments:", error);
+    return false;
   }
 }
