@@ -2,12 +2,27 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import {
+  generateAndUploadTTS,
+  estimateTTSDuration,
+  deleteEventAudio,
+  deleteSegmentAudio,
+  isTTSConfigured,
+} from "@/lib/google-tts";
 
 /**
  * Generate TTS for all script segments of an event
  */
 export async function generateTTSForAllSegments(eventId: string) {
   try {
+    // Check if TTS is configured
+    if (!isTTSConfigured()) {
+      return {
+        success: false,
+        error: "Google TTS is not properly configured",
+      };
+    }
+
     // Convert string eventId to number
     const eventIdNum = parseInt(eventId, 10);
 
@@ -20,15 +35,15 @@ export async function generateTTSForAllSegments(eventId: string) {
 
     // Get all script segments for the event
     const segments = await db.script_segments.findMany({
-      where: { 
+      where: {
         event_id: eventIdNum,
         // Only process segments that don't have audio yet or failed
         OR: [
           { audio_url: null },
           { status: "draft" },
           { status: "editing" },
-          { status: "failed" }
-        ]
+          { status: "failed" },
+        ],
       },
       orderBy: { order: "asc" },
     });
@@ -64,21 +79,33 @@ export async function generateTTSForAllSegments(eventId: string) {
             data: { status: "generating" },
           });
 
-          // In a real implementation, you would call your TTS API here
-          // For now, we'll simulate TTS generation with a mock URL
-          const audioUrl = `https://api.example.com/audio/segment-${segment.id}-${Date.now()}.mp3`;
-          
-          // Calculate approximate duration based on content length
-          // In a real implementation, you would get the actual duration from the TTS service
-          const approximateDuration = Math.ceil(segment.content.length / 20); // ~20 chars per second
-          
+          // Generate TTS and upload to S3
+          const audioUrl = await generateAndUploadTTS(
+            segment.id,
+            eventIdNum,
+            segment.content,
+            event.voice_settings
+          );
+
+          // Estimate duration based on content
+          const estimatedDuration = estimateTTSDuration(
+            segment.content,
+            // Extract speaking rate from voice settings if available
+            typeof event.voice_settings === "string"
+              ? JSON.parse(event.voice_settings)?.speakingRate || 1.0
+              : typeof event.voice_settings === "object" && event.voice_settings
+              ? (event.voice_settings as { speakingRate?: number })
+                  .speakingRate || 1.0
+              : 1.0
+          );
+
           // Update the segment with the audio URL and status
           await db.script_segments.update({
             where: { id: segment.id },
             data: {
               audio_url: audioUrl,
               status: "generated",
-              timing: approximateDuration,
+              timing: estimatedDuration,
             },
           });
 
@@ -88,8 +115,11 @@ export async function generateTTSForAllSegments(eventId: string) {
             audioUrl,
           };
         } catch (error) {
-          console.error(`Error generating TTS for segment ${segment.id}:`, error);
-          
+          console.error(
+            `Error generating TTS for segment ${segment.id}:`,
+            error
+          );
+
           // Mark segment as failed
           await db.script_segments.update({
             where: { id: segment.id },
@@ -99,7 +129,8 @@ export async function generateTTSForAllSegments(eventId: string) {
           return {
             segmentId: segment.id,
             success: false,
-            error: error instanceof Error ? error.message : "TTS generation failed",
+            error:
+              error instanceof Error ? error.message : "TTS generation failed",
           };
         }
       })
@@ -112,11 +143,11 @@ export async function generateTTSForAllSegments(eventId: string) {
     const allSegmentsCount = await db.script_segments.count({
       where: { event_id: eventIdNum },
     });
-    
+
     const generatedSegmentsCount = await db.script_segments.count({
-      where: { 
+      where: {
         event_id: eventIdNum,
-        status: "generated"
+        status: "generated",
       },
     });
 
@@ -157,8 +188,145 @@ export async function generateTTSForAllSegments(eventId: string) {
 /**
  * Generate TTS for a single script segment
  */
+/**
+ * Delete audio for a script segment
+ */
+export async function deleteScriptSegmentAudio(segmentId: number) {
+  try {
+    // Get the segment to find the event ID
+    const segment = await db.script_segments.findUnique({
+      where: { id: segmentId },
+      select: { event_id: true, audio_url: true },
+    });
+
+    if (!segment) {
+      return {
+        success: false,
+        error: "Script segment not found",
+      };
+    }
+
+    // Delete the audio file from S3
+    if (segment.audio_url) {
+      await deleteSegmentAudio(segment.event_id, segmentId);
+    }
+
+    // Update the segment to remove the audio URL
+    await db.script_segments.update({
+      where: { id: segmentId },
+      data: {
+        audio_url: null,
+        status: "draft",
+      },
+    });
+
+    // Revalidate paths
+    revalidatePath(`/events/${segment.event_id}`);
+    revalidatePath(`/event/${segment.event_id}`);
+    revalidatePath(`/event/${segment.event_id}/script`);
+
+    return {
+      success: true,
+      message: "Audio deleted successfully",
+    };
+  } catch (error) {
+    console.error(`Error deleting audio for segment ${segmentId}:`, error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to delete audio for segment",
+    };
+  }
+}
+
+/**
+ * Delete all audio for an event
+ */
+export async function deleteAllEventAudio(eventId: string) {
+  try {
+    // Convert string eventId to number
+    const eventIdNum = parseInt(eventId, 10);
+
+    if (isNaN(eventIdNum)) {
+      return {
+        success: false,
+        error: "Invalid event ID format",
+      };
+    }
+
+    // Get all script segments for the event
+    const segments = await db.script_segments.findMany({
+      where: {
+        event_id: eventIdNum,
+        audio_url: { not: null },
+      },
+      select: { id: true },
+    });
+
+    if (segments.length === 0) {
+      return {
+        success: true,
+        message: "No audio files to delete",
+      };
+    }
+
+    // Delete all audio files from S3
+    await deleteEventAudio(eventIdNum);
+
+    // Update all segments to remove audio URLs
+    await db.script_segments.updateMany({
+      where: { event_id: eventIdNum },
+      data: {
+        audio_url: null,
+        status: "draft",
+      },
+    });
+
+    // Update the event status
+    await db.events.update({
+      where: { event_id: eventIdNum },
+      data: {
+        status: "script_ready", // Back to script ready but not fully ready
+        updated_at: new Date(),
+      },
+    });
+
+    // Revalidate paths
+    revalidatePath(`/events/${eventId}`);
+    revalidatePath(`/event/${eventId}`);
+    revalidatePath(`/event/${eventId}/script`);
+
+    return {
+      success: true,
+      message: `Deleted audio for ${segments.length} segments`,
+    };
+  } catch (error) {
+    console.error(`Error deleting audio for event ${eventId}:`, error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to delete audio for event",
+    };
+  }
+}
+
+/**
+ * Generate TTS for a single script segment
+ */
 export async function generateTTSForSegment(segmentId: number) {
   try {
+    // Check if TTS is configured
+    if (!isTTSConfigured()) {
+      return {
+        success: false,
+        error: "Google TTS is not properly configured",
+      };
+    }
+
     // Get the script segment
     const segment = await db.script_segments.findUnique({
       where: { id: segmentId },
@@ -191,21 +359,33 @@ export async function generateTTSForSegment(segmentId: number) {
     });
 
     try {
-      // In a real implementation, you would call your TTS API here
-      // For now, we'll simulate TTS generation with a mock URL
-      const audioUrl = `https://api.example.com/audio/segment-${segmentId}-${Date.now()}.mp3`;
-      
-      // Calculate approximate duration based on content length
-      // In a real implementation, you would get the actual duration from the TTS service
-      const approximateDuration = Math.ceil(segment.content.length / 20); // ~20 chars per second
-      
+      // Generate TTS and upload to S3
+      const audioUrl = await generateAndUploadTTS(
+        segmentId,
+        segment.event_id,
+        segment.content,
+        event.voice_settings
+      );
+
+      // Estimate duration based on content
+      const estimatedDuration = estimateTTSDuration(
+        segment.content,
+        // Extract speaking rate from voice settings if available
+        typeof event.voice_settings === "string"
+          ? JSON.parse(event.voice_settings)?.speakingRate || 1.0
+          : typeof event.voice_settings === "object" && event.voice_settings
+          ? (event.voice_settings as { speakingRate?: number })?.speakingRate ||
+            1.0
+          : 1.0
+      );
+
       // Update the segment with the audio URL and status
       await db.script_segments.update({
         where: { id: segmentId },
         data: {
           audio_url: audioUrl,
           status: "generated",
-          timing: approximateDuration,
+          timing: estimatedDuration,
         },
       });
 
@@ -213,11 +393,11 @@ export async function generateTTSForSegment(segmentId: number) {
       const allSegmentsCount = await db.script_segments.count({
         where: { event_id: segment.event_id },
       });
-      
+
       const generatedSegmentsCount = await db.script_segments.count({
-        where: { 
+        where: {
           event_id: segment.event_id,
-          status: "generated"
+          status: "generated",
         },
       });
 
@@ -244,7 +424,7 @@ export async function generateTTSForSegment(segmentId: number) {
       };
     } catch (error) {
       console.error(`Error generating TTS for segment ${segmentId}:`, error);
-      
+
       // Mark segment as failed
       await db.script_segments.update({
         where: { id: segmentId },

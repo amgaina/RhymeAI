@@ -24,6 +24,8 @@ import { generateEnhancedScriptFromLayout } from "@/app/actions/event/enhanced-s
 import {
   generateTTSForAllSegments,
   generateTTSForSegment,
+  deleteScriptSegmentAudio,
+  deleteAllEventAudio,
 } from "@/app/actions/event/tts-generation";
 import PresentationManager from "@/components/dashboard/PresentationManager";
 import EventDashboard from "@/components/dashboard/EventDashboard";
@@ -415,41 +417,62 @@ export default function EventDetailPage() {
   };
 
   // Handle delete segment
-  const handleDeleteSegment = (segmentId: number) => {
+  const handleDeleteSegment = async (segmentId: number) => {
     if (!event) return;
 
-    setEvent({
-      ...event,
-      scriptSegments: event.scriptSegments.filter(
-        (segment) => segment.id !== segmentId
-      ),
-    });
+    try {
+      // First delete the audio file if it exists
+      const segment = event.scriptSegments.find((s) => s.id === segmentId);
+      if (segment?.audio) {
+        // Delete the audio file from S3
+        await deleteScriptSegmentAudio(segmentId);
+      }
+
+      // Then update the UI
+      setEvent({
+        ...event,
+        scriptSegments: event.scriptSegments.filter(
+          (segment) => segment.id !== segmentId
+        ),
+      });
+
+      toast({
+        title: "Segment deleted",
+        description: "Script segment has been deleted",
+      });
+    } catch (error) {
+      console.error(`Error deleting segment ${segmentId}:`, error);
+      toast({
+        title: "Error",
+        description: "Failed to delete segment",
+        variant: "destructive",
+      });
+    }
   };
 
   // Handle regenerate all audio
-  const handleRegenerateAll = () => {
+  const handleRegenerateAll = async () => {
     if (!event) return;
 
-    // First mark all as generating
-    setEvent({
-      ...event,
-      scriptSegments: event.scriptSegments.map((segment) => ({
-        ...segment,
-        status: "generating",
-      })),
-    });
+    try {
+      // First delete all existing audio files
+      await deleteAllEventAudio(eventId as string);
 
-    // Then simulate generation with delay
-    setTimeout(() => {
-      setEvent({
-        ...event,
-        scriptSegments: event.scriptSegments.map((segment, index) => ({
-          ...segment,
-          status: "generated",
-          audio: `mock-audio-url-${index + 1}.mp3`,
-        })),
+      // Then generate new audio for all segments
+      await handleGenerateAllTTS();
+
+      toast({
+        title: "Audio regeneration started",
+        description: "All audio files will be regenerated",
       });
-    }, 3000);
+    } catch (error) {
+      console.error("Error regenerating all audio:", error);
+      toast({
+        title: "Error",
+        description: "Failed to regenerate audio",
+        variant: "destructive",
+      });
+    }
   };
 
   // Handle script generation
