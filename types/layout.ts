@@ -32,10 +32,12 @@ export interface LayoutSegment {
 
 // Event layout structure
 export interface EventLayout {
+  id: number | string;
+  eventId: number;
   segments: LayoutSegment[];
   totalDuration: number;
   lastUpdated: string; // ISO string
-  version: number; // For tracking changes
+  version?: number; // For tracking changes
 }
 
 // Templates for different event types

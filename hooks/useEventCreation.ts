@@ -129,7 +129,13 @@ export default function useEventCreation() {
   // Handle event data collection from chat
   const handleEventDataCollected = (data: Record<string, string>) => {
     console.log("Event data collected:", data);
-    setCollectedEventData(data);
+    // Ensure data is a valid object before setting it
+    if (data && typeof data === "object" && Object.keys(data).length > 0) {
+      setCollectedEventData(data);
+    } else {
+      console.error("Invalid event data received:", data);
+      return;
+    }
 
     // Update event info with collected data
     setEventInfo((prev) => ({
@@ -153,11 +159,21 @@ export default function useEventCreation() {
 
   // Generate script segments from event data
   const generateScriptFromEventData = (data: Record<string, string>) => {
+    // Ensure data is a valid object
+    if (!data || typeof data !== "object") {
+      console.error("Invalid data passed to generateScriptFromEventData");
+      return;
+    }
+
     const eventName = data.eventName || eventInfo.name || "the event";
     const eventType = data.eventType || eventInfo.type || "event";
     const eventDescription = data.eventDescription || "this special occasion";
-    const speakers = data.speakerInformation
-      ? JSON.stringify(data.speakerInformation).split(",")
+    // Extract speaker information if available
+    const speakerInfo = data.speakerInformation || data.speakerInfo;
+    const speakers = speakerInfo
+      ? typeof speakerInfo === "string"
+        ? speakerInfo.split(",")
+        : ["our featured speakers"]
       : ["our featured speakers"];
 
     // Create appropriate script segments based on event type

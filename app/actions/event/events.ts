@@ -82,7 +82,9 @@ export async function getEvents(): Promise<{
         id: event.event_id.toString(),
         name: event.title,
         type: event.event_type,
-        date: event.event_date.toISOString().split("T")[0],
+        date: event.event_date
+          ? event.event_date.toISOString().split("T")[0]
+          : "Not specified",
         location: event.location || "Not specified",
         description: event.description || "",
         voiceSettings: {

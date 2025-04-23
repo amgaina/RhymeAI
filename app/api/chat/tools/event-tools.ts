@@ -88,25 +88,23 @@ export const storeEventDataTool = tool({
     const voicePreference = params.voicePreference || {};
 
     // Set default values for required voice settings
-    formData.append("voiceGender", voicePreference.gender || "neutral");
-    formData.append("voiceType", voicePreference.tone || "professional");
-    formData.append("accent", voicePreference.accent || "american");
+    formData.append("voiceGender", voicePreference?.gender || "neutral");
+    formData.append("voiceType", voicePreference?.tone || "professional");
+    formData.append("accent", voicePreference?.accent || "american");
 
-    // Always provide default values for speakingRate and pitch
-    // Convert logical values to numeric strings expected by the server
     const speedValue =
-      voicePreference.speed === "fast"
+      voicePreference?.speed === "fast"
         ? "80"
-        : voicePreference.speed === "slow"
+        : voicePreference?.speed === "slow"
         ? "20"
-        : "50"; // Default to medium
+        : "50";
 
     const pitchValue =
-      voicePreference.pitch === "high"
+      voicePreference?.pitch === "high"
         ? "80"
-        : voicePreference.pitch === "low"
+        : voicePreference?.pitch === "low"
         ? "20"
-        : "50"; // Default to medium
+        : "50";
 
     formData.append("speakingRate", speedValue);
     formData.append("pitch", pitchValue);
@@ -119,7 +117,7 @@ export const storeEventDataTool = tool({
         // link chat to event
         return {
           success: true,
-          message: result.message || "Event created successfully",
+          message: "Event created successfully",
           eventId: result.eventId,
           storedData: params,
         };
@@ -602,11 +600,11 @@ export const finalizeEventTool = tool({
       // Call the server action to finalize the event
       const result = await finalizeEvent(params.eventId);
 
-      if (result.success) {
+      if (result.success && result.event) {
         return {
           success: true,
           event: result.event,
-          message: result.message || "Event finalized successfully",
+          message: result || "Event finalized successfully",
         };
       } else {
         return {

@@ -34,13 +34,11 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { useRouter } from "next/navigation";
-import {
-  createEvent,
-  getVoicePreview,
-  generateEventScript,
-} from "@/app/actions/event";
+import { createEvent } from "@/app/actions/event";
 import { useState } from "react";
 import { Play, Plus, RotateCw } from "lucide-react";
+import { getVoicePreview } from "../app/actions/event";
+import { generateEventScript } from "../app/actions/event";
 
 // Form validation schema
 const eventFormSchema = z.object({

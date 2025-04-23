@@ -60,13 +60,57 @@ export async function generateEventLayout(eventId: string) {
 
     // Create the full event layout structure
     const eventLayout: EventLayout = {
+      id: layout.id,
+      eventId: eventIdNum,
       segments: layoutSegments,
       totalDuration,
       lastUpdated: new Date().toISOString(),
       version: 1,
     };
 
-    // Store the layout in the database with proper JSON serialization
+    // Create or update the relational layout in the database
+    const layout = await db.event_layout.upsert({
+      where: {
+        event_id: eventIdNum,
+      },
+      update: {
+        total_duration: totalDuration,
+        layout_version: { increment: 1 },
+        updated_at: new Date(),
+        last_generated_by: "system",
+      },
+      create: {
+        event_id: eventIdNum,
+        total_duration: totalDuration,
+        last_generated_by: "system",
+      },
+    });
+
+    // Delete any existing segments for this layout
+    await db.layout_segments.deleteMany({
+      where: {
+        layout_id: layout.id,
+      },
+    });
+
+    // Create new segments
+    const createdSegments = await Promise.all(
+      layoutSegments.map((segment) =>
+        db.layout_segments.create({
+          data: {
+            layout_id: layout.id,
+            name: segment.name,
+            type: segment.type,
+            description: segment.description,
+            duration: segment.duration,
+            order: segment.order,
+            custom_properties: {},
+          },
+        })
+      )
+    );
+
+    // Also store the layout as JSON for backward compatibility
     await db.events.update({
       where: { event_id: eventIdNum },
       data: {
@@ -80,9 +124,29 @@ export async function generateEventLayout(eventId: string) {
     revalidatePath(`/event-creation?eventId=${eventId}`);
     revalidatePath(`/event/${eventId}`);
 
+    // Map the database segments to the expected format
+    const formattedSegments = createdSegments.map((segment) => ({
+      id: segment.id,
+      name: segment.name,
+      type: segment.type as SegmentType,
+      description: segment.description,
+      duration: segment.duration,
+      order: segment.order,
+    }));
+
+    // Create the response layout with the actual segments from the database
+    const responseLayout: EventLayout = {
+      id: layout.id,
+      eventId: eventIdNum,
+      segments: formattedSegments,
+      totalDuration: layout.total_duration,
+      lastUpdated: layout.updated_at.toISOString(),
+      version: layout.layout_version,
+    };
+
     return {
       success: true,
-      layout: eventLayout,
+      layout: responseLayout,
       message: "Event layout generated successfully",
     };
   } catch (error) {
@@ -481,7 +545,7 @@ export async function updateEventLayoutSegment(
       ...currentLayout,
       segments: [...currentLayout.segments],
       lastUpdated: new Date().toISOString(),
-      version: currentLayout.version + 1,
+      version: (currentLayout.version || 1) + 1,
     };
 
     updatedLayout.segments[segmentIndex] = {
@@ -573,7 +637,7 @@ export async function addLayoutSegment(
       ...currentLayout,
       segments: [...currentLayout.segments, completeSegment],
       lastUpdated: new Date().toISOString(),
-      version: currentLayout.version + 1,
+      version: (currentLayout.version || 1) + 1,
       totalDuration: currentLayout.totalDuration + newSegment.duration,
     };
 
@@ -666,7 +730,7 @@ export async function deleteLayoutSegment(eventId: string, segmentId: string) {
       ...currentLayout,
       segments: reorderedSegments,
       lastUpdated: new Date().toISOString(),
-      version: currentLayout.version + 1,
+      version: (currentLayout.version || 1) + 1,
       totalDuration: currentLayout.totalDuration - segmentDuration,
     };
 

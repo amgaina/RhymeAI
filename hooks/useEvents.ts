@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { EventData, getEvents } from "@/app/actions/event";
 import { useToast } from "@/components/ui/use-toast";
+import { getEvents, EventData } from "@/app/actions/event";
 
 export function useEvents() {
   const { toast } = useToast();
@@ -14,37 +14,8 @@ export function useEvents() {
         const result = await getEvents();
 
         if (result.success && result.events) {
-          // Transform the server response to match client-side needs
-          const clientEvents: EventData[] = result.events.map((event) => ({
-            id: String(event.event_id),
-            name: event.title,
-            type: event.event_type,
-            date: event.event_date.toISOString().split("T")[0],
-            location: event.location,
-            description: event.description,
-            voiceSettings: event.voice_settings as {
-              type: string;
-              language: string;
-            },
-            scriptSegments: event.segments.map((segment) => ({
-              id: segment.id,
-              type: segment.segment_type,
-              content: segment.content,
-              status: segment.status as
-                | "draft"
-                | "editing"
-                | "generating"
-                | "generated",
-              timing: segment.timing || 0,
-              order: segment.order,
-              audio: segment.audio_url,
-              presentationSlide: null,
-            })),
-            createdAt: event.created_at.toISOString(),
-            status: event.status,
-            hasPresentation: event.has_presentation,
-            playCount: event.play_count,
-          }));
+          // The server now returns properly formatted EventData objects
+          const clientEvents: EventData[] = result.events;
 
           setEvents(clientEvents);
         } else {

@@ -158,8 +158,19 @@ export function RhymeAIChat({
                   ? JSON.parse(toolCall.args)
                   : toolCall.args;
 
-              // Call the callback with the data
-              onEventDataCollected(eventData);
+              // Call the callback with the data if it's valid
+              if (
+                eventData &&
+                typeof eventData === "object" &&
+                Object.keys(eventData).length > 0
+              ) {
+                onEventDataCollected(eventData);
+              } else {
+                console.error(
+                  "Invalid event data received from tool call:",
+                  eventData
+                );
+              }
 
               // If the eventData has an ID and we don't have an eventId yet, store it
               if (eventData.eventId && !createdEventId) {
@@ -365,7 +376,13 @@ export function RhymeAIChat({
         });
       });
 
-      onEventDataCollected(eventData);
+      // Make sure we have at least some data before calling the callback
+      if (Object.keys(eventData).length > 0) {
+        onEventDataCollected(eventData);
+      } else {
+        console.error("No event data could be extracted from conversation");
+        return;
+      }
 
       // Add a message to transition to script generation
       // Use a unique ID by adding a timestamp
@@ -829,7 +846,12 @@ export function RhymeAIChat({
                                 <div className="flex items-center gap-1 text-red-500">
                                   <CircleDot className="h-3 w-3" />
                                   <span>
-                                    Error: {tool.args || "Unknown error"}
+                                    Error:{" "}
+                                    {typeof tool.args === "string"
+                                      ? tool.args
+                                      : tool.args
+                                      ? JSON.stringify(tool.args)
+                                      : "Unknown error"}
                                   </span>
                                 </div>
                               )}

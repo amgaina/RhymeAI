@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { PlusCircle, Mic2, Settings } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
-import { EventData, getEvents } from "@/app/actions/event";
+import { EventData, getEventById } from "@/app/actions/event";
 import { useParams, useRouter } from "next/navigation";
 import { ScriptSegment } from "@/types/event";
 
@@ -52,56 +52,19 @@ export default function EventDetailPage() {
     async function loadEventData() {
       try {
         setIsLoading(true);
-        const result = await getEvents();
+        console.log("Loading event with ID:", eventId);
 
-        if (result.success && result.events) {
-          // Transform the events as before
-          const clientEvents: EventData[] = result.events.map((event) => ({
-            id: String(event.event_id),
-            name: event.title,
-            type: event.event_type,
-            date: event.event_date.toISOString().split("T")[0],
-            location: event.location,
-            description: event.description,
-            voiceSettings: event.voice_settings as {
-              type: string;
-              language: string;
-            },
-            scriptSegments: event.segments.map((segment) => ({
-              id: segment.id,
-              type: segment.segment_type,
-              content: segment.content,
-              status: segment.status as
-                | "draft"
-                | "editing"
-                | "generating"
-                | "generated",
-              timing: segment.timing || 0,
-              order: segment.order,
-              audio: segment.audio_url,
-              presentationSlide: null,
-            })),
-            createdAt: event.created_at.toISOString(),
-            status: event.status,
-            hasPresentation: event.has_presentation,
-            playCount: event.play_count,
-          }));
+        // Use the new getEventById function to fetch only the specific event
+        const result = await getEventById(eventId as string);
 
-          // Find the specific event
-          const foundEvent = clientEvents.find((e) => e.id === eventId);
-          if (foundEvent) {
-            setEvent(foundEvent);
-            calculateTotalDuration(foundEvent.scriptSegments);
-          } else {
-            toast({
-              title: "Event not found",
-              description: "The requested event could not be found",
-              variant: "destructive",
-            });
-            router.push("/dashboard");
-          }
+        if (result.success && result.event) {
+          console.log("Event loaded successfully:", result.event);
+
+          // Set the event data directly
+          setEvent(result.event);
+          calculateTotalDuration(result.event.scriptSegments);
         } else {
-          console.error("Failed to load events:", result.error);
+          console.error("Failed to load event:", result.error);
           toast({
             title: "Error loading event",
             description: result.error || "Could not load event details",
@@ -122,7 +85,9 @@ export default function EventDetailPage() {
       }
     }
 
-    loadEventData();
+    if (eventId) {
+      loadEventData();
+    }
   }, [eventId, router, toast]);
 
   // Calculate total duration of script segments
