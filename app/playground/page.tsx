@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Mic2, Wand2 } from "lucide-react";
+import { Mic2, Wand2, Music, Layers, Headphones } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "RhymeAI Playground",
@@ -40,6 +40,48 @@ export default function PlaygroundPage() {
               <p>
                 Enter text and generate audio using Google Cloud Text-to-Speech.
                 Customize voice settings and play back the generated audio.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/playground/audio-editor" className="block">
+          <Card className="h-full transition-all hover:shadow-md">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Layers className="h-5 w-5" />
+                Audio Editor
+              </CardTitle>
+              <CardDescription>
+                Create layered audio presentations
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p>
+                Edit emcee scripts in layers with background sounds and
+                presentation sync. Create professional audio presentations with
+                a simple interface.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/playground/audio-player" className="block">
+          <Card className="h-full transition-all hover:shadow-md">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Headphones className="h-5 w-5" />
+                Audio Player
+              </CardTitle>
+              <CardDescription>
+                Test audio playback and synchronization
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p>
+                Play multiple audio tracks simultaneously with precise timing
+                control. Test synchronization between voice, music, and sound
+                effects.
               </p>
             </CardContent>
           </Card>
