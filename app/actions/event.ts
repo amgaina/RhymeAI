@@ -21,6 +21,7 @@ export interface EventData {
     [key: string]: any;
   };
   scriptSegments: ScriptSegment[];
+  layout?: EventLayout | null;
   createdAt: string;
   status: string;
   hasPresentation?: boolean;
@@ -981,6 +982,25 @@ export async function getEventById(eventId: string): Promise<{
         ? JSON.parse(event.voice_settings as string)
         : event.voice_settings;
 
+    // Format the event layout if it exists
+    let formattedLayout: EventLayout | null = null;
+    if (event.layout) {
+      formattedLayout = {
+        id: event.layout.id,
+        eventId: event.layout.event_id,
+        totalDuration: event.layout.total_duration,
+        lastUpdated: event.layout.updated_at.toISOString(),
+        segments: event.layout.segments.map((segment: any) => ({
+          id: segment.id.toString(),
+          name: segment.name,
+          type: segment.type,
+          description: segment.description,
+          duration: segment.duration,
+          order: segment.order,
+        })),
+      };
+    }
+
     // Format the event data for the client
     const formattedEvent: EventData = {
       id: String(event.event_id),
@@ -1009,6 +1029,7 @@ export async function getEventById(eventId: string): Promise<{
         audio: segment.audio_url,
         presentationSlide: null,
       })),
+      layout: formattedLayout,
       createdAt: event.created_at
         ? event.created_at.toISOString()
         : new Date().toISOString(),

@@ -6,9 +6,14 @@ import { Card } from "@/components/ui/card";
 import { PlusCircle, Mic2, Settings } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
-import { EventData, getEventById } from "@/app/actions/event";
+import {
+  EventData,
+  getEventById,
+  generateEventLayout,
+} from "@/app/actions/event";
 import { useParams, useRouter } from "next/navigation";
 import { ScriptSegment } from "@/types/event";
+import { EventLayout, LayoutSegment } from "@/types/layout";
 
 // Import our modular components
 import { EventHeader } from "@/components/dashboard/EventHeader";
@@ -18,6 +23,7 @@ import PresentationManager from "@/components/dashboard/PresentationManager";
 import EventDashboard from "@/components/dashboard/EventDashboard";
 import DeviceManager from "@/components/dashboard/DeviceManager";
 import EventSettings from "@/components/dashboard/EventSettings";
+import LayoutManager from "@/components/dashboard/LayoutManager";
 import EnhancedAudioPlayer from "@/components/dashboard/EnhancedAudioPlayer";
 import { useDevices } from "@/hooks/useDevices";
 import { RhymeAIChat } from "@/components/RhymeAIChat";
@@ -34,6 +40,7 @@ export default function EventDetailPage() {
   } = useDevices();
 
   const [event, setEvent] = useState<EventData | null>(null);
+  const [eventLayout, setEventLayout] = useState<EventLayout | null>(null);
   const [isEventRunning, setIsEventRunning] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
@@ -46,6 +53,7 @@ export default function EventDetailPage() {
     scriptText: string;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isGeneratingLayout, setIsGeneratingLayout] = useState(false);
 
   // Load specific event data
   useEffect(() => {
@@ -63,6 +71,11 @@ export default function EventDetailPage() {
           // Set the event data directly
           setEvent(result.event);
           calculateTotalDuration(result.event.scriptSegments);
+
+          // If layout data is available in the event, set it
+          if (result.event.layout) {
+            setEventLayout(result.event.layout);
+          }
         } else {
           console.error("Failed to load event:", result.error);
           toast({
@@ -146,6 +159,128 @@ export default function EventDetailPage() {
 
       // Cleanup interval on stop
       return () => clearInterval(interval);
+    }
+  };
+
+  // Handle regenerating the event layout
+  const handleRegenerateLayout = async () => {
+    if (!event || !eventId) return;
+
+    try {
+      setIsGeneratingLayout(true);
+      const result = await generateEventLayout(eventId as string);
+
+      if (result.success && result.layout) {
+        setEventLayout(result.layout);
+        toast({
+          title: "Layout generated",
+          description: "Event layout has been successfully generated.",
+        });
+      } else {
+        toast({
+          title: "Error generating layout",
+          description: result.error || "Failed to generate layout",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error generating layout:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate layout. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingLayout(false);
+    }
+  };
+
+  // Handle layout segment updates
+  const handleUpdateLayoutSegment = async (segment: LayoutSegment) => {
+    if (!eventLayout) return;
+
+    try {
+      // Call the server action to update the segment
+      // For now, just update the local state
+      const updatedSegments = eventLayout.segments.map((s) =>
+        s.id === segment.id ? segment : s
+      );
+
+      setEventLayout({
+        ...eventLayout,
+        segments: updatedSegments,
+        lastUpdated: new Date().toISOString(),
+      });
+
+      toast({
+        title: "Segment updated",
+        description: "Layout segment has been updated.",
+      });
+    } catch (error) {
+      console.error("Error updating segment:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update segment. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle adding a new layout segment
+  const handleAddLayoutSegment = async (segment: Omit<LayoutSegment, "id">) => {
+    if (!eventLayout) return;
+
+    try {
+      // Create a temporary ID for optimistic UI updates
+      const tempSegment = {
+        ...segment,
+        id: `temp-${Date.now()}`,
+      };
+
+      // Update the local state
+      setEventLayout({
+        ...eventLayout,
+        segments: [...eventLayout.segments, tempSegment],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      toast({
+        title: "Segment added",
+        description: "New layout segment has been added.",
+      });
+    } catch (error) {
+      console.error("Error adding segment:", error);
+      toast({
+        title: "Error",
+        description: "Failed to add segment. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle deleting a layout segment
+  const handleDeleteLayoutSegment = async (segmentId: string) => {
+    if (!eventLayout) return;
+
+    try {
+      // Update the local state
+      setEventLayout({
+        ...eventLayout,
+        segments: eventLayout.segments.filter((s) => s.id !== segmentId),
+        lastUpdated: new Date().toISOString(),
+      });
+
+      toast({
+        title: "Segment deleted",
+        description: "Layout segment has been deleted.",
+      });
+    } catch (error) {
+      console.error("Error deleting segment:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete segment. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -385,6 +520,12 @@ export default function EventDetailPage() {
                 Overview
               </TabsTrigger>
               <TabsTrigger
+                value="layout"
+                className="data-[state=active]:bg-background"
+              >
+                Layout
+              </TabsTrigger>
+              <TabsTrigger
                 value="script"
                 className="data-[state=active]:bg-background"
               >
@@ -428,6 +569,19 @@ export default function EventDetailPage() {
                     );
                   }
                 }}
+              />
+            </TabsContent>
+
+            {/* Layout Tab */}
+            <TabsContent value="layout" className="space-y-4">
+              <LayoutManager
+                eventId={parseInt(eventId as string)}
+                layout={eventLayout}
+                isGenerating={isGeneratingLayout}
+                onRegenerateLayout={handleRegenerateLayout}
+                onUpdateSegment={handleUpdateLayoutSegment}
+                onAddSegment={handleAddLayoutSegment}
+                onDeleteSegment={handleDeleteLayoutSegment}
               />
             </TabsContent>
 
