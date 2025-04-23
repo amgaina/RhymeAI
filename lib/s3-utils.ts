@@ -2,7 +2,11 @@
  * S3 utilities for RhymeAI
  * Handles uploading and retrieving files from S3
  */
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Initialize S3 client
@@ -41,11 +45,16 @@ export async function uploadToS3(
     // Upload the file
     await s3Client.send(command);
 
-    // Return the URL
-    return `https://${BUCKET_NAME}.s3.amazonaws.com/${key}`;
+    // Generate a presigned URL that expires in 5 days
+    const fiveDaysInSeconds = 5 * 24 * 60 * 60; // 5 days in seconds
+    return await getPresignedUrl(key, fiveDaysInSeconds);
   } catch (error) {
     console.error("Error uploading to S3:", error);
-    throw new Error(`Failed to upload file to S3: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to upload file to S3: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
 }
 
@@ -55,7 +64,10 @@ export async function uploadToS3(
  * @param expiresIn The expiration time in seconds (default: 3600 = 1 hour)
  * @returns The presigned URL
  */
-export async function getPresignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+export async function getPresignedUrl(
+  key: string,
+  expiresIn: number = 3600
+): Promise<string> {
   try {
     // Create the GetObjectCommand
     const command = new GetObjectCommand({
@@ -67,7 +79,11 @@ export async function getPresignedUrl(key: string, expiresIn: number = 3600): Pr
     return await getSignedUrl(s3Client, command, { expiresIn });
   } catch (error) {
     console.error("Error generating presigned URL:", error);
-    throw new Error(`Failed to generate presigned URL: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to generate presigned URL: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
 }
 
@@ -78,7 +94,11 @@ export async function getPresignedUrl(key: string, expiresIn: number = 3600): Pr
  * @param timestamp Optional timestamp to ensure uniqueness
  * @returns The S3 key
  */
-export function generateAudioKey(eventId: string | number, segmentId: string | number, timestamp: number = Date.now()): string {
+export function generateAudioKey(
+  eventId: string | number,
+  segmentId: string | number,
+  timestamp: number = Date.now()
+): string {
   return `audio/event-${eventId}/segment-${segmentId}-${timestamp}.mp3`;
 }
 
@@ -88,7 +108,10 @@ export function generateAudioKey(eventId: string | number, segmentId: string | n
  * @param timestamp Optional timestamp to ensure uniqueness
  * @returns The S3 key
  */
-export function generatePresentationKey(eventId: string | number, timestamp: number = Date.now()): string {
+export function generatePresentationKey(
+  eventId: string | number,
+  timestamp: number = Date.now()
+): string {
   return `presentations/event-${eventId}/presentation-${timestamp}.pptx`;
 }
 

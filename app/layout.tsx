@@ -14,6 +14,7 @@ import {
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { DashboardLink } from "@/components/DashboardLink";
+import PlaygroundLink from "@/components/PlaygroundLink";
 import { Toaster } from "@/components/ui/toaster";
 
 const poppins = Poppins({
@@ -58,6 +59,7 @@ export default function RootLayout({
                 {/* Navigation Links */}
                 <nav className="hidden md:flex gap-20 animate-fade-in delay-100">
                   <DashboardLink />
+                  <PlaygroundLink />
                   <Link
                     href="#features"
                     className="hover:text-accent transition-colors font-medium tracking-wide hover:underline underline-offset-4"

@@ -8,57 +8,12 @@ import { db } from "./db";
 
 // Initialize Google TTS client
 let ttsClient: TextToSpeechClient | null = null;
+process.env.GOOGLE_APPLICATION_CREDENTIALS = "./rhymeai.json";
 
 try {
-  // Check if we have credentials
-  if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-    // Try to parse as JSON first
-    try {
-      // If it's a valid JSON string, use it as credentials
-      const credentials = JSON.parse(
-        process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON
-      );
-      ttsClient = new TextToSpeechClient({ credentials });
-    } catch (parseError) {
-      // If it's not valid JSON, it might be an API key
-      if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON.startsWith("AIza")) {
-        // It looks like an API key, use it directly
-        console.log("Using Google API key for authentication");
-        ttsClient = new TextToSpeechClient({
-          credentials: {
-            client_email: undefined,
-            private_key: undefined,
-          },
-          projectId: process.env.GOOGLE_PROJECT_ID,
-          apiEndpoint: "texttospeech.googleapis.com",
-          auth: {
-            apiKey: process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON,
-          },
-        });
-      } else {
-        // Not JSON and not an API key
-        console.error("Invalid Google credentials format:", parseError);
-      }
-    }
-  } else if (process.env.GOOGLE_API_KEY) {
-    // Alternative: use GOOGLE_API_KEY if available
-    console.log("Using GOOGLE_API_KEY for authentication");
-    ttsClient = new TextToSpeechClient({
-      credentials: {
-        client_email: undefined,
-        private_key: undefined,
-      },
-      projectId: process.env.GOOGLE_PROJECT_ID,
-      apiEndpoint: "texttospeech.googleapis.com",
-      auth: {
-        apiKey: process.env.GOOGLE_API_KEY,
-      },
-    });
-  } else {
-    // Try to use Application Default Credentials
-    console.log("Attempting to use Application Default Credentials");
-    ttsClient = new TextToSpeechClient();
-  }
+  // Simple initialization using environment credentials
+  ttsClient = new TextToSpeechClient();
+  console.log("Google TTS client initialized successfully");
 } catch (error) {
   console.error("Failed to initialize Google TTS client:", error);
 }
