@@ -21,6 +21,8 @@ import {
   FileText,
   Upload,
   Trash2,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import EnhancedAudioPlayer from "./EnhancedAudioPlayer";
 import { ScriptSegment } from "@/types/event";
@@ -32,6 +34,9 @@ interface ScriptManagerProps {
   onDeleteSegment?: (segmentId: number) => void;
   onAddSegment?: () => void;
   onRegenerateAll?: () => void;
+  onGenerateScript?: () => void; // Script generation based on event layout
+  isGeneratingScript?: boolean;
+  hasLayout?: boolean; // New prop to indicate if the event has a layout
 }
 
 export default function ScriptManager({
@@ -41,6 +46,9 @@ export default function ScriptManager({
   onDeleteSegment,
   onAddSegment,
   onRegenerateAll,
+  onGenerateScript,
+  isGeneratingScript = false,
+  hasLayout = true, // Default to true for backward compatibility
 }: ScriptManagerProps) {
   const [activeSegment, setActiveSegment] = useState<number | null>(null);
   const [editingContent, setEditingContent] = useState<string>("");
@@ -150,6 +158,32 @@ export default function ScriptManager({
                   Add Segment
                 </Button>
               )}
+              {onGenerateScript && (
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={onGenerateScript}
+                  disabled={isGeneratingScript || !hasLayout}
+                  title={
+                    !hasLayout
+                      ? "Create a layout first to generate a script"
+                      : "Generate script based on your event layout"
+                  }
+                  className="flex items-center gap-1"
+                >
+                  {isGeneratingScript ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generating from Layout...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      Generate from Layout
+                    </>
+                  )}
+                </Button>
+              )}
               {onRegenerateAll && (
                 <Button
                   size="sm"
@@ -168,18 +202,40 @@ export default function ScriptManager({
           {segments.length === 0 ? (
             <div className="p-8 text-center">
               <p className="text-muted-foreground">
-                No script segments yet. Start a conversation with the AI to
-                generate your script, or upload an event structure.
+                {hasLayout
+                  ? "No script segments yet. Generate a script based on your event layout."
+                  : "No script segments yet. Create an event layout first, then generate a script."}
               </p>
               <div className="mt-4 flex justify-center gap-2">
-                <Button
-                  variant="outline"
-                  className="flex items-center gap-1"
-                  onClick={onAddSegment}
-                >
-                  <FileText className="h-4 w-4" />
-                  Create from Template
-                </Button>
+                {onGenerateScript && (
+                  <Button
+                    variant="default"
+                    className="flex items-center gap-1"
+                    onClick={onGenerateScript}
+                    disabled={isGeneratingScript || !hasLayout}
+                  >
+                    {isGeneratingScript ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Generating Script...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        {hasLayout ? "Generate from Layout" : "Layout Required"}
+                      </>
+                    )}
+                  </Button>
+                )}
+                {!hasLayout && (
+                  <Button
+                    variant="outline"
+                    className="flex items-center gap-1"
+                    onClick={() => (window.location.href = "#layout")} // This should navigate to the layout tab
+                  >
+                    Create Layout First
+                  </Button>
+                )}
                 <Button variant="outline" className="flex items-center gap-1">
                   <Upload className="h-4 w-4" />
                   Import Script

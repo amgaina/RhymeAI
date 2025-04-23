@@ -19,6 +19,12 @@ import { EventLayout, LayoutSegment } from "@/types/layout";
 import { EventHeader } from "@/components/dashboard/EventHeader";
 import EventOverview from "@/components/dashboard/EventOverview";
 import ScriptManager from "@/components/dashboard/ScriptManager";
+import EnhancedScriptManager from "@/components/dashboard/EnhancedScriptManager";
+import { generateEnhancedScriptFromLayout } from "@/app/actions/event/enhanced-script-generation";
+import {
+  generateTTSForAllSegments,
+  generateTTSForSegment,
+} from "@/app/actions/event/tts-generation";
 import PresentationManager from "@/components/dashboard/PresentationManager";
 import EventDashboard from "@/components/dashboard/EventDashboard";
 import DeviceManager from "@/components/dashboard/DeviceManager";
@@ -54,6 +60,7 @@ export default function EventDetailPage() {
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGeneratingLayout, setIsGeneratingLayout] = useState(false);
+  const [isGeneratingScript, setIsGeneratingScript] = useState(false);
 
   // Load specific event data
   useEffect(() => {
@@ -253,7 +260,6 @@ export default function EventDetailPage() {
       toast({
         title: "Error",
         description: "Failed to add segment. Please try again.",
-        variant: "destructive",
       });
     }
   };
@@ -446,6 +452,103 @@ export default function EventDetailPage() {
     }, 3000);
   };
 
+  // Handle script generation
+  const handleGenerateScript = async () => {
+    if (!event) return;
+
+    try {
+      setIsGeneratingScript(true);
+
+      // Call the server action to generate an enhanced script from the layout
+      const result = await generateEnhancedScriptFromLayout(eventId as string);
+
+      if (result.success) {
+        toast({
+          title: "Script generated",
+          description: "Script has been generated successfully",
+        });
+
+        // Refresh the event data by reloading the page
+        window.location.reload();
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to generate script",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error generating script:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate script",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingScript(false);
+    }
+  };
+
+  // Handle generating TTS for all script segments
+  const handleGenerateAllTTS = async () => {
+    try {
+      const result = await generateTTSForAllSegments(eventId as string);
+
+      if (result.success) {
+        toast({
+          title: "Audio generation",
+          description: `Generated audio for ${result.successCount} segments`,
+        });
+
+        // Refresh the event data by reloading the page
+        window.location.reload();
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to generate audio",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error generating audio for all segments:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate audio",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle generating TTS for a single script segment
+  const handleGenerateSingleTTS = async (segmentId: number) => {
+    try {
+      const result = await generateTTSForSegment(segmentId);
+
+      if (result.success) {
+        toast({
+          title: "Audio generated",
+          description: "Audio has been generated successfully",
+        });
+
+        // Refresh the event data by reloading the page
+        window.location.reload();
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to generate audio",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error(`Error generating audio for segment ${segmentId}:`, error);
+      toast({
+        title: "Error",
+        description: "Failed to generate audio",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-secondary flex items-center justify-center">
@@ -501,9 +604,21 @@ export default function EventDetailPage() {
             eventType={event.type}
             isRunning={isEventRunning}
             isReady={event.status === "ready"}
+            status={event.status}
             onBack={() => router.push("/dashboard")}
             onToggleRunning={toggleEventRunning}
             onEdit={() => setActiveTab("settings")}
+            onContinueSetup={() =>
+              router.push(`/event/create?eventId=${event.id}`)
+            }
+            onGenerateLayout={() => {
+              setActiveTab("layout");
+              // Add logic to generate layout if needed
+            }}
+            onGenerateScript={() => {
+              setActiveTab("script");
+              // Add logic to generate script if needed
+            }}
           />
 
           {/* Event Tabs */}
@@ -588,23 +703,19 @@ export default function EventDetailPage() {
             {/* Script Tab */}
             <TabsContent value="script" className="space-y-4">
               <div className="grid grid-cols-1 gap-6">
-                <ScriptManager
+                <EnhancedScriptManager
                   segments={event.scriptSegments || []}
                   onUpdateSegment={handleUpdateSegment}
                   onGenerateAudio={handleGenerateAudio}
                   onDeleteSegment={handleDeleteSegment}
                   onAddSegment={handleAddSegment}
                   onRegenerateAll={handleRegenerateAll}
+                  onGenerateScript={handleGenerateScript}
+                  onGenerateAllTTS={handleGenerateAllTTS}
+                  onGenerateSingleTTS={handleGenerateSingleTTS}
+                  isGeneratingScript={isGeneratingScript}
+                  hasLayout={!!event.layout && event.layout.segments.length > 0} // Pass layout availability
                 />
-
-                {/* Selected Audio Preview */}
-                {selectedAudioPreview && (
-                  <EnhancedAudioPlayer
-                    title={selectedAudioPreview.title}
-                    scriptText={selectedAudioPreview.scriptText}
-                    audioUrl={selectedAudioPreview.audioUrl}
-                  />
-                )}
               </div>
             </TabsContent>
 

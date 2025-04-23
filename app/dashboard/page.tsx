@@ -1,5 +1,4 @@
 "use client";
-import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,7 +11,6 @@ import {
   FileText,
 } from "lucide-react";
 import { RhymeAIChat } from "@/components/RhymeAIChat";
-import { useToast } from "@/components/ui/use-toast";
 import EventList, { EventItem } from "@/components/dashboard/EventList";
 import { useEvents } from "@/hooks/useEvents";
 
@@ -200,6 +198,26 @@ export default function Dashboard() {
             onSelectEvent={(eventId) => {
               // Navigate to event detail page
               window.location.href = `/event/${eventId}`;
+            }}
+            onContinueEvent={(eventId, status) => {
+              // Handle different statuses
+              switch (status) {
+                case "draft":
+                  // Continue with event setup
+                  window.location.href = `/event/create?eventId=${eventId}`;
+                  break;
+                case "layout_pending":
+                  // Generate layout
+                  window.location.href = `/event/${eventId}/layout`;
+                  break;
+                case "script_pending":
+                  // Generate script
+                  window.location.href = `/event/${eventId}/script`;
+                  break;
+                default:
+                  // Default to event detail page
+                  window.location.href = `/event/${eventId}`;
+              }
             }}
             createEventLink={createEventLink}
           />

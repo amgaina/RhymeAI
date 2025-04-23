@@ -104,6 +104,8 @@ export async function addLayoutSegment(
     let currentLayout: EventLayout;
     if (!event || !event.event_layout) {
       currentLayout = {
+        id: uuidv4(),
+        eventId: eventIdNum,
         segments: [],
         totalDuration: 0,
         lastUpdated: new Date().toISOString(),
@@ -124,7 +126,7 @@ export async function addLayoutSegment(
       ...currentLayout,
       segments: [...currentLayout.segments, completeSegment],
       lastUpdated: new Date().toISOString(),
-      version: currentLayout.version + 1,
+      version: (currentLayout.version ?? 0) + 1,
       totalDuration: currentLayout.totalDuration + newSegment.duration,
     };
 
@@ -266,7 +268,7 @@ export async function updateEventLayoutSegment(
       ...currentLayout,
       segments: [...currentLayout.segments],
       lastUpdated: new Date().toISOString(),
-      version: currentLayout.version + 1,
+      version: (currentLayout.version ?? 0) + 1,
     };
 
     updatedLayout.segments[segmentIndex] = {
@@ -429,7 +431,7 @@ export async function deleteLayoutSegment(
       ...currentLayout,
       segments: reorderedSegments,
       lastUpdated: new Date().toISOString(),
-      version: currentLayout.version + 1,
+      version: (currentLayout.version ?? 0) + 1,
       totalDuration: currentLayout.totalDuration - segmentDuration,
     };
 

@@ -12,6 +12,7 @@ import {
   Globe,
   PlusCircle,
   ArrowUpRight,
+  ArrowRight,
   Play,
   Clock,
   CheckCircle,
@@ -40,14 +41,71 @@ export interface EventItem {
 interface EventListProps {
   events: EventItem[];
   onSelectEvent: (eventId: string) => void;
+  onContinueEvent: (eventId: string, status: string) => void;
   createEventLink: string;
 }
 
 export default function EventList({
   events,
   onSelectEvent,
+  onContinueEvent,
   createEventLink,
 }: EventListProps) {
+  // Helper function to determine what action button to show based on event status
+  const getActionButton = (event: EventItem) => {
+    switch (event.status) {
+      case "ready":
+        return (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => onSelectEvent(event.id)}
+          >
+            Start Event
+          </Button>
+        );
+      case "draft":
+        return (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onContinueEvent(event.id, "draft")}
+          >
+            Continue Setup
+          </Button>
+        );
+      case "layout_pending":
+        return (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onContinueEvent(event.id, "layout_pending")}
+          >
+            Generate Layout
+          </Button>
+        );
+      case "script_pending":
+        return (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onContinueEvent(event.id, "script_pending")}
+          >
+            Generate Script
+          </Button>
+        );
+      default:
+        return (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onContinueEvent(event.id, event.status)}
+          >
+            Continue
+          </Button>
+        );
+    }
+  };
   // Format time to MM:SS
   const formatTime = (seconds?: number) => {
     if (!seconds) return "0:00";
@@ -187,22 +245,29 @@ export default function EventList({
                           <ArrowUpRight className="h-3 w-3 mr-1" />
                           Manage
                         </Button>
-                        <Button
-                          variant={
-                            event.status === "ready" ? "default" : "outline"
-                          }
-                          size="sm"
-                          className={`h-8 px-2 ${
-                            event.status === "ready"
-                              ? "bg-cta hover:bg-cta/90"
-                              : ""
-                          }`}
-                          disabled={event.status !== "ready"}
-                          onClick={() => onSelectEvent(event.id)}
-                        >
-                          <Play className="h-3 w-3 mr-1" />
-                          {event.status === "ready" ? "Start" : "Not Ready"}
-                        </Button>
+                        {event.status === "ready" ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="h-8 px-2 bg-cta hover:bg-cta/90"
+                            onClick={() => onSelectEvent(event.id)}
+                          >
+                            <Play className="h-3 w-3 mr-1" />
+                            Start
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2"
+                            onClick={() =>
+                              onContinueEvent(event.id, event.status)
+                            }
+                          >
+                            <ArrowRight className="h-3 w-3 mr-1" />
+                            Continue Setup
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
