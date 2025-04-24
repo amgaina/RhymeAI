@@ -136,9 +136,78 @@ export default function AudioEditorPlayground() {
     return estimatedSeconds;
   };
 
-  // Cleanup resources when component unmounts
+  // Initialize audio context on user interaction
   useEffect(() => {
+    const initializeAudio = () => {
+      // Create a silent audio context to initialize Web Audio API
+      try {
+        const AudioContext =
+          window.AudioContext || (window as any).webkitAudioContext;
+        const audioContext = new AudioContext();
+
+        // Create a silent oscillator
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        // Set the gain to 0 (silent)
+        gainNode.gain.value = 0;
+
+        // Connect the oscillator to the gain node and the gain node to the destination
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        // Start and stop the oscillator immediately
+        oscillator.start(0);
+        oscillator.stop(0.001);
+
+        // Create a simple audio buffer with silence
+        try {
+          // Create a short buffer of silence
+          const buffer = audioContext.createBuffer(
+            1,
+            1024,
+            audioContext.sampleRate
+          );
+          const source = audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioContext.destination);
+
+          // Play the buffer
+          source.start(0);
+          source.stop(0.001);
+
+          console.log("Audio buffer initialized successfully");
+        } catch (bufferError) {
+          console.warn("Failed to play audio buffer:", bufferError);
+        }
+
+        console.log("Audio context initialized successfully");
+
+        // Remove event listeners once initialized
+        document.removeEventListener("click", initializeAudio);
+        document.removeEventListener("touchstart", initializeAudio);
+      } catch (error) {
+        console.error("Failed to initialize audio context:", error);
+        toast.error(
+          "Failed to initialize audio context. Audio playback may not work."
+        );
+      }
+    };
+
+    // Add event listeners for user interaction
+    document.addEventListener("click", initializeAudio);
+    document.addEventListener("touchstart", initializeAudio);
+
+    // Show a message to the user
+    toast.info("Please click anywhere on the page to enable audio playback", {
+      duration: 5000,
+    });
+
     return () => {
+      // Clean up event listeners
+      document.removeEventListener("click", initializeAudio);
+      document.removeEventListener("touchstart", initializeAudio);
+
       // Clean up file URLs
       fileUrlsRef.current.forEach((url) => {
         revokeAudioFileUrl(url);
@@ -387,21 +456,63 @@ export default function AudioEditorPlayground() {
           size="sm"
           variant="outline"
           onClick={() => {
-            const testAudio = new Audio(
-              "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABTgD///////////////////////////////////////////8AAAA8TEFNRTMuMTAwAc0AAAAAAAAAABSAJALGQQAAgAAAUi4NqpAAAAAAAAAAAAAAAAD/++DEAAAIoAFnlAAABRiCLPKAAAEEIbn7t9vu/7vd+FBMQglDEFYICAgQhCEJ4nCAIBn/w4EAQ//CCEIQn//CAIAgEAQBAEAQBAEAzcIQhCEIBgCDw+CfP/Lg8HwfB8Hw+D4Ph8Hw+D4Pj/5cHg+D4Pn/ywQBAEAQBAMQTN4gCAIRh+X//hG12kkkkkkk/4hGIRiEMQhGIQjEIhCMQiEYhGIQjEIhGIRiEIxCMQhGIQjEIRiEQjEIhGIRiEIRiEYhGIQjEIRiEYhCEYhGIQjEIRiEYhCEYhEIRiEYhCMQhGIQhGIQjEIRiEIxCEYhGIQjEIRiEYhCEYhGIQjEIRiEYhCMQhCMQhGIQjEQgAIBgEAQCCQyHSTLJJJJJJJJJJJJJJJJJJJPEIxCMQjEIRiEIxCEYhGIQjEIRiEYhCMQhGIRiEIxCEYhCMQjEIRiEIxCEYhGIQjEIRiEYhCEYhGIQjEIRiEIxCEYhGIQhGIRiEIxCEYhGIQjEIRiEIxCMQhGIQjEIRiEYhCMQhGIRiEIxCEIxCMQhGIQjEIRiEIxCEIKAAIAQDwCAAAAAAAAH0AACEAgGAQCBJJJJJJJJJN27f//////mWTk5OScnJycnJyxnJyxv///7m5vyRIBAIBkEhmSSSSSbJJJJJJJJJJJO//tWHfWlDrlWTIgARAQeXrFYoRqoGBx8YH//8KO86JJLZGA1MZbhL2IZxb//9xFKRIoUFDASbQAw0BSs1//8Wfi9nGRZplsNJJHDxwsdXs+NNOI+lQRs7v//8sqoSELsUGClOGBgYVjq8dOT3///4tM4//vgxF8AHD4Q1faKAAMawfK80kACIrYdHWc5rWRJgkAQFAI8dY8DRrh55QkKdSXv///3TOoVCSSdC4wJjgcGgkFg8dEq1Ju///5vXOJCJzowIcLGAYODRFxAadRwpwKMEgEHw+Pwc63u///95tkyJLI2EhxJGgg4OFISiSZtOLX///+VaSJnODYcGCgqPDAQHDRcFDTqdRGOTJGCwkBgYNBf9F3f///2LnMESCsYLBwJGkk6Dg8UEgyNOu9f////LLMKiyMChgiJjQUJCQoLGnLkJgMSNHAVnAh7vd////JZlhQbHBImLjQ8PEhIIiUbHHTXX/////Xk1qoJHRosKjQsICQkKBwyHwgVSIiCRxZAgMPv/X////0LNESDQwKCgkYHB4YFwgaPMqUVx1///5JqPG2/u7u7u7u7u7u7vd3d3TLu7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7d3d6ZJd3d33d3d3d3d3dmSXd3d93d3d3d3d3d3d3d3d3d3d3d3d3d6ZZd3d3d3d3d3d3dmaZd3dmZJd3d2ZJmQDu7szMmaZd3dnFku7u7oAA7u7Mku7u7u7uQDu7u7IAAAzMzMAAAAA="
-            );
-            testAudio.volume = 0.2;
+            try {
+              // Create a temporary AudioContext to initialize Web Audio API
+              const AudioContext =
+                window.AudioContext || (window as any).webkitAudioContext;
+              const audioContext = new AudioContext();
 
-            // Play a test sound and report results
-            testAudio
-              .play()
-              .then(() => {
+              // Create a silent oscillator
+              const oscillator = audioContext.createOscillator();
+              const gainNode = audioContext.createGain();
+
+              // Set the gain to 0 (silent)
+              gainNode.gain.value = 0;
+
+              // Connect the oscillator to the gain node and the gain node to the destination
+              oscillator.connect(gainNode);
+              gainNode.connect(audioContext.destination);
+
+              // Start and stop the oscillator immediately
+              oscillator.start(0);
+              oscillator.stop(0.001);
+
+              // Create a simple audio buffer with silence
+              try {
+                // Create a short buffer of silence
+                const buffer = audioContext.createBuffer(
+                  1,
+                  1024,
+                  audioContext.sampleRate
+                );
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioContext.destination);
+
+                // Play the buffer
+                source.start(0);
+                source.stop(0.001);
+
                 toast.success("Audio test successful!");
-              })
-              .catch((err) => {
-                console.error("Audio test failed:", err);
-                toast.error("Audio test failed: " + err.message);
-              });
+                console.log("Audio buffer initialized successfully");
+              } catch (bufferError) {
+                console.warn("Failed to play audio buffer:", bufferError);
+                toast.error(
+                  "Audio buffer test failed: " +
+                    (bufferError instanceof Error
+                      ? bufferError.message
+                      : String(bufferError))
+                );
+              }
+
+              console.log("Audio context initialized successfully");
+            } catch (error) {
+              console.error("Failed to initialize audio context:", error);
+              toast.error(
+                "Audio test failed: " +
+                  (error instanceof Error ? error.message : String(error))
+              );
+            }
           }}
         >
           Test Audio

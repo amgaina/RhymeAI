@@ -12,7 +12,12 @@ interface ScriptTTSGeneratorProps {
   segments: ScriptSegment[];
   onGenerateAll: () => Promise<void>;
   onGenerateSingle: (segmentId: number) => Promise<void>;
-  onPlayAudio: (audioUrl: string, title: string, content: string) => void;
+  onPlayAudio: (
+    audioUrl: string,
+    title: string,
+    content: string,
+    segmentId?: number
+  ) => void;
 }
 
 export default function ScriptTTSGenerator({
@@ -22,17 +27,16 @@ export default function ScriptTTSGenerator({
   onPlayAudio,
 }: ScriptTTSGeneratorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
-  const [currentSegmentIndex, setCurrentSegmentIndex] = useState<number | null>(null);
+  const [currentSegmentIndex, setCurrentSegmentIndex] = useState<number | null>(
+    null
+  );
   const [progress, setProgress] = useState(0);
 
   // Count segments by status
-  const statusCounts = segments.reduce(
-    (acc, segment) => {
-      acc[segment.status] = (acc[segment.status] || 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>
-  );
+  const statusCounts = segments.reduce((acc, segment) => {
+    acc[segment.status] = (acc[segment.status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   // Calculate overall progress
   const totalSegments = segments.length;
@@ -43,16 +47,16 @@ export default function ScriptTTSGenerator({
   const handleGenerateAll = async () => {
     setIsGenerating(true);
     setProgress(0);
-    
+
     try {
       // Start the generation process
       await onGenerateAll();
-      
+
       // In a real implementation, you would update progress as each segment is processed
       // For now, we'll simulate progress
       for (let i = 0; i <= 100; i += 10) {
         setProgress(i);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     } catch (error) {
       console.error("Error generating TTS:", error);
@@ -65,7 +69,7 @@ export default function ScriptTTSGenerator({
   // Handle generate single segment
   const handleGenerateSingle = async (segmentId: number, index: number) => {
     setCurrentSegmentIndex(index);
-    
+
     try {
       await onGenerateSingle(segmentId);
     } catch (error) {
@@ -87,9 +91,13 @@ export default function ScriptTTSGenerator({
             <Badge variant="outline" className="bg-primary/5">
               {totalSegments} Segments
             </Badge>
-            <Badge 
-              variant="outline" 
-              className={`${generatedCount === totalSegments ? "bg-green-100 text-green-600" : "bg-amber-100 text-amber-600"}`}
+            <Badge
+              variant="outline"
+              className={`${
+                generatedCount === totalSegments
+                  ? "bg-green-100 text-green-600"
+                  : "bg-amber-100 text-amber-600"
+              }`}
             >
               {generatedCount}/{totalSegments} Generated
             </Badge>
@@ -181,15 +189,17 @@ export default function ScriptTTSGenerator({
                     </Badge>
                   </div>
                   <div className="col-span-2 flex gap-2">
-                    {segment.status === "generated" && segment.audio ? (
+                    {segment.status === "generated" &&
+                    (segment.audio || segment.audio_url) ? (
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() =>
                           onPlayAudio(
-                            segment.audio!,
+                            segment.audio_url || segment.audio!,
                             `${segment.type.replace(/_/g, " ")}`,
-                            segment.content
+                            segment.content,
+                            segment.id // Pass the segment ID for presigned URL
                           )
                         }
                       >

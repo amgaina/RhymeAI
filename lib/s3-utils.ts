@@ -6,6 +6,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -69,14 +70,38 @@ export async function getPresignedUrl(
   expiresIn: number = 3600
 ): Promise<string> {
   try {
-    // Create the GetObjectCommand
+    console.log(
+      `Generating presigned URL for key: ${key} with expiration: ${expiresIn} seconds`
+    );
+
+    // Check if the object exists in S3
+    const exists = await checkS3ObjectExists(key).catch((error) => {
+      console.warn(`Error checking if object exists, assuming it does:`, error);
+      return true; // Assume it exists if we can't check
+    });
+
+    if (!exists) {
+      throw new Error(`Object does not exist in S3: ${key}`);
+    }
+
+    // Create the GetObjectCommand with response headers for CORS
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
       Key: key,
+      ResponseContentType: "audio/mpeg", // Ensure proper content type
+      ResponseContentDisposition: `inline; filename="${key.split("/").pop()}"`, // Ensure proper filename
+      // Add CORS headers
+      ResponseCacheControl: "no-cache, no-store, must-revalidate",
     });
 
     // Generate the presigned URL
-    return await getSignedUrl(s3Client, command, { expiresIn });
+    const url = await getSignedUrl(s3Client, command, {
+      expiresIn,
+    });
+
+    console.log(`Generated presigned URL: ${url.substring(0, 100)}...`);
+
+    return url;
   } catch (error) {
     console.error("Error generating presigned URL:", error);
     throw new Error(
@@ -134,4 +159,41 @@ export function isS3Configured(): boolean {
  */
 export function getS3Url(key: string): string {
   return `https://${BUCKET_NAME}.s3.amazonaws.com/${key}`;
+}
+
+/**
+ * Check if an object exists in S3
+ * @param key The S3 key
+ * @returns True if the object exists, false otherwise
+ */
+export async function checkS3ObjectExists(key: string): Promise<boolean> {
+  try {
+    console.log(`Checking if object exists in S3: ${key}`);
+
+    // Create the HeadObjectCommand
+    const command = new HeadObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+    });
+
+    // Send the command
+    await s3Client.send(command);
+
+    // If no error is thrown, the object exists
+    console.log(`Object exists in S3: ${key}`);
+    return true;
+  } catch (error) {
+    // If the error is a 404, the object doesn't exist
+    if (
+      (error as any)?.name === "NotFound" ||
+      (error as any)?.code === "NotFound"
+    ) {
+      console.log(`Object does not exist in S3: ${key}`);
+      return false;
+    }
+
+    // For other errors, log and rethrow
+    console.error(`Error checking if object exists in S3: ${key}`, error);
+    throw error;
+  }
 }

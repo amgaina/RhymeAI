@@ -21,12 +21,12 @@ import {
 } from "lucide-react";
 import ScriptManager from "./ScriptManager";
 import ScriptTTSGenerator from "./ScriptTTSGenerator";
-import EnhancedAudioPlayer from "./EnhancedAudioPlayer";
+import DOMBasedAudioPlayer from "./DOMBasedAudioPlayer";
 
 interface EnhancedScriptManagerProps {
   segments: ScriptSegment[];
   onUpdateSegment: (segmentId: number, content: string) => void;
-  onGenerateAudio: (segmentId: number) => void;
+  onGenerateAudio: (segmentId: number) => Promise<void>;
   onDeleteSegment?: (segmentId: number) => void;
   onAddSegment?: () => void;
   onRegenerateAll?: () => void;
@@ -55,18 +55,21 @@ export default function EnhancedScriptManager({
     audioUrl: string;
     title: string;
     scriptText: string;
+    segmentId?: number; // Add segmentId for presigned URL
   } | null>(null);
 
   // Handle playing audio for a script segment
   const handlePlayAudio = (
     audioUrl: string,
     title: string,
-    scriptText: string
+    scriptText: string,
+    segmentId?: number
   ) => {
     setSelectedAudioPreview({
       audioUrl,
       title: title || "Audio Preview",
       scriptText: scriptText || "",
+      segmentId, // Pass the segment ID for presigned URL
     });
   };
 
@@ -144,8 +147,8 @@ export default function EnhancedScriptManager({
         <CardFooter className="border-t pt-4">
           <div className="text-sm text-muted-foreground">
             <p>
-              Script segments are generated based on your event layout. Each segment
-              can be edited and have its own audio generated.
+              Script segments are generated based on your event layout. Each
+              segment can be edited and have its own audio generated.
             </p>
           </div>
         </CardFooter>
@@ -153,10 +156,11 @@ export default function EnhancedScriptManager({
 
       {/* Audio Preview */}
       {selectedAudioPreview && (
-        <EnhancedAudioPlayer
+        <DOMBasedAudioPlayer
           title={selectedAudioPreview.title}
           scriptText={selectedAudioPreview.scriptText}
           audioUrl={selectedAudioPreview.audioUrl}
+          segmentId={selectedAudioPreview.segmentId} // Pass the segment ID for presigned URL
         />
       )}
     </div>

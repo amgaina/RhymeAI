@@ -18,19 +18,18 @@ import {
   AlertCircle,
   PlusCircle,
   RefreshCcw,
-  FileText,
   Upload,
   Trash2,
   Sparkles,
   Loader2,
 } from "lucide-react";
-import EnhancedAudioPlayer from "./EnhancedAudioPlayer";
+import DOMBasedAudioPlayer from "./DOMBasedAudioPlayer";
 import { ScriptSegment } from "@/types/event";
 
 interface ScriptManagerProps {
   segments: ScriptSegment[];
   onUpdateSegment: (segmentId: number, content: string) => void;
-  onGenerateAudio: (segmentId: number) => void;
+  onGenerateAudio: (segmentId: number) => Promise<void>;
   onDeleteSegment?: (segmentId: number) => void;
   onAddSegment?: () => void;
   onRegenerateAll?: () => void;
@@ -55,6 +54,7 @@ export default function ScriptManager({
   const [selectedSegmentForPreview, setSelectedSegmentForPreview] =
     useState<ScriptSegment | null>(null);
 
+  console.log(segments);
   const handleEdit = (segment: ScriptSegment) => {
     setActiveSegment(segment.id);
     setEditingContent(segment.content);
@@ -255,7 +255,7 @@ export default function ScriptManager({
                     )}
                   </h3>
                   <div className="flex gap-2">
-                    {segment.audio && (
+                    {(segment.audio || segment.audio_url) && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -343,7 +343,9 @@ export default function ScriptManager({
                             size="sm"
                             variant="link"
                             className="h-5 px-1 text-xs"
-                            onClick={() => onGenerateAudio(segment.id)}
+                            onClick={async () =>
+                              await onGenerateAudio(segment.id)
+                            }
                           >
                             Generate audio
                           </Button>
@@ -359,10 +361,14 @@ export default function ScriptManager({
 
       {/* Audio Preview */}
       {selectedSegmentForPreview && (
-        <EnhancedAudioPlayer
+        <DOMBasedAudioPlayer
           title={`Preview: ${selectedSegmentForPreview.type}`}
           scriptText={selectedSegmentForPreview.content}
-          audioUrl={selectedSegmentForPreview.audio}
+          audioUrl={
+            selectedSegmentForPreview.audio_url ||
+            selectedSegmentForPreview.audio
+          }
+          segmentId={selectedSegmentForPreview.id} // Pass the segment ID for presigned URL
           segmentIndex={findSegmentIndex(selectedSegmentForPreview.id)}
           totalSegments={segments.length}
           onNextSegment={handleNextSegment}

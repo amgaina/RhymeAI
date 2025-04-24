@@ -453,64 +453,126 @@ export function createAudioManager(options: AudioManagerOptions = {}) {
  * Returns a promise that resolves with the duration in seconds
  */
 export function getAudioFileDuration(url: string): Promise<number> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     try {
-      const audio = new Audio();
+      // First try using Web Audio API which is more reliable
+      if (
+        typeof AudioContext !== "undefined" ||
+        typeof (window as any).webkitAudioContext !== "undefined"
+      ) {
+        try {
+          const context = new (AudioContext ||
+            (window as any).webkitAudioContext)();
 
-      const handleDurationChange = () => {
-        if (audio.duration && !isNaN(audio.duration)) {
-          cleanup();
-          resolve(audio.duration);
+          // Fetch the audio file
+          fetch(url)
+            .then((response) => {
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              return response.arrayBuffer();
+            })
+            .then((arrayBuffer) => context.decodeAudioData(arrayBuffer))
+            .then((audioBuffer) => {
+              // Get the duration from the decoded audio buffer
+              resolve(audioBuffer.duration);
+              // Clean up the context
+              if (
+                context.state !== "closed" &&
+                typeof context.close === "function"
+              ) {
+                context.close();
+              }
+            })
+            .catch((error) => {
+              console.warn(
+                "Web Audio API method failed, falling back to Audio element:",
+                error
+              );
+              // Fall back to Audio element method
+              fallbackToAudioElement();
+            });
+        } catch (error) {
+          console.warn(
+            "Web Audio API initialization failed, falling back to Audio element:",
+            error
+          );
+          // Fall back to Audio element method
+          fallbackToAudioElement();
         }
-      };
+      } else {
+        // Web Audio API not supported, use Audio element
+        fallbackToAudioElement();
+      }
 
-      const handleMetadata = () => {
-        if (audio.duration && !isNaN(audio.duration)) {
+      // Fallback method using Audio element
+      function fallbackToAudioElement() {
+        const audio = new Audio();
+
+        const handleDurationChange = () => {
+          if (audio.duration && !isNaN(audio.duration)) {
+            cleanup();
+            resolve(audio.duration);
+          }
+        };
+
+        const handleMetadata = () => {
+          if (audio.duration && !isNaN(audio.duration)) {
+            cleanup();
+            resolve(audio.duration);
+          }
+        };
+
+        const handleCanPlayThrough = () => {
+          if (audio.duration && !isNaN(audio.duration)) {
+            cleanup();
+            resolve(audio.duration);
+          }
+        };
+
+        const handleError = (e: Event) => {
+          console.error("Audio element error:", e);
           cleanup();
-          resolve(audio.duration);
-        }
-      };
+          // Use a default value instead of rejecting
+          console.warn("Using default duration of 30 seconds due to error");
+          resolve(30);
+        };
 
-      const handleCanPlayThrough = () => {
-        if (audio.duration && !isNaN(audio.duration)) {
+        const cleanup = () => {
+          audio.removeEventListener("durationchange", handleDurationChange);
+          audio.removeEventListener("loadedmetadata", handleMetadata);
+          audio.removeEventListener("canplaythrough", handleCanPlayThrough);
+          audio.removeEventListener("error", handleError);
+          clearTimeout(timeout);
+          // Don't need the audio anymore
+          audio.src = "";
+        };
+
+        // Set a timeout to avoid hanging indefinitely
+        const timeout = setTimeout(() => {
           cleanup();
-          resolve(audio.duration);
-        }
-      };
+          // If we can't determine duration, use a default value
+          console.warn("Timeout reached, using default duration of 30 seconds");
+          resolve(30); // Default 30 seconds
+        }, 5000);
 
-      const handleError = () => {
-        cleanup();
-        reject(new Error("Could not determine audio file duration"));
-      };
+        // Add event listeners to get duration
+        audio.addEventListener("durationchange", handleDurationChange);
+        audio.addEventListener("loadedmetadata", handleMetadata);
+        audio.addEventListener("canplaythrough", handleCanPlayThrough);
+        audio.addEventListener("error", handleError);
 
-      const cleanup = () => {
-        audio.removeEventListener("durationchange", handleDurationChange);
-        audio.removeEventListener("loadedmetadata", handleMetadata);
-        audio.removeEventListener("canplaythrough", handleCanPlayThrough);
-        audio.removeEventListener("error", handleError);
-        clearTimeout(timeout);
-        // Don't need the audio anymore
-        audio.src = "";
-      };
+        // Set crossOrigin to anonymous to handle CORS issues
+        audio.crossOrigin = "anonymous";
 
-      // Set a timeout to avoid hanging indefinitely
-      const timeout = setTimeout(() => {
-        cleanup();
-        // If we can't determine duration, use a default value
-        resolve(30); // Default 30 seconds
-      }, 5000);
-
-      // Add event listeners to get duration
-      audio.addEventListener("durationchange", handleDurationChange);
-      audio.addEventListener("loadedmetadata", handleMetadata);
-      audio.addEventListener("canplaythrough", handleCanPlayThrough);
-      audio.addEventListener("error", handleError);
-
-      // Load the audio file
-      audio.src = url;
-      audio.load();
+        // Load the audio file
+        audio.src = url;
+        audio.load();
+      }
     } catch (error) {
-      reject(error);
+      console.error("Unhandled error in getAudioFileDuration:", error);
+      // Use a default value instead of rejecting
+      resolve(30);
     }
   });
 }

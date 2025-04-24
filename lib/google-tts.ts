@@ -3,7 +3,7 @@
  * Handles TTS generation using Google Cloud TTS API
  */
 import { TextToSpeechClient } from "@google-cloud/text-to-speech";
-import { uploadToS3, generateAudioKey, getS3Url } from "./s3-utils";
+import { uploadToS3, generateAudioKey } from "./s3-utils";
 import { db } from "./db";
 
 // Initialize Google TTS client
@@ -44,35 +44,44 @@ export interface VoiceConfig {
 
 /**
  * Default voice configurations
+ *
+ * Valid ranges for parameters:
+ * - speakingRate: 0.25 to 4.0
+ * - pitch: -20.0 to 20.0
+ * - volumeGainDb: -96.0 to 16.0
  */
 export const DEFAULT_VOICES: Record<string, VoiceConfig> = {
   professional: {
     languageCode: "en-US",
     name: "en-US-Neural2-F",
     ssmlGender: "FEMALE",
-    speakingRate: 0.95,
-    pitch: 0,
+    speakingRate: 0.95, // Within valid range
+    pitch: 0, // Within valid range
+    volumeGainDb: 0, // Within valid range
   },
   casual: {
     languageCode: "en-US",
     name: "en-US-Neural2-D",
     ssmlGender: "MALE",
-    speakingRate: 1.0,
-    pitch: -0.5,
+    speakingRate: 1.0, // Within valid range
+    pitch: -0.5, // Within valid range
+    volumeGainDb: 0, // Within valid range
   },
   energetic: {
     languageCode: "en-US",
     name: "en-US-Neural2-H",
     ssmlGender: "FEMALE",
-    speakingRate: 1.05,
-    pitch: 1.0,
+    speakingRate: 1.05, // Within valid range
+    pitch: 1.0, // Within valid range
+    volumeGainDb: 2.0, // Within valid range
   },
   formal: {
     languageCode: "en-US",
     name: "en-US-Neural2-J",
     ssmlGender: "MALE",
-    speakingRate: 0.9,
-    pitch: -1.0,
+    speakingRate: 0.9, // Within valid range
+    pitch: -1.0, // Within valid range
+    volumeGainDb: 0, // Within valid range
   },
 };
 
@@ -126,7 +135,36 @@ export async function generateTTS(
     // Parse SSML markers
     const ssml = parseSSMLMarkers(text);
 
-    // Configure the request
+    // Validate all parameters to ensure they're within valid ranges
+
+    // 1. Speaking rate: valid range is 0.25 to 4.0
+    const speakingRate = voiceConfig.speakingRate || 1.0;
+    const validSpeakingRate = Math.max(0.25, Math.min(4.0, speakingRate));
+    if (speakingRate !== validSpeakingRate) {
+      console.warn(
+        `Speaking rate adjusted from ${speakingRate} to ${validSpeakingRate} to be within valid range (0.25 to 4.0)`
+      );
+    }
+
+    // 2. Pitch: valid range is -20.0 to 20.0
+    const pitch = voiceConfig.pitch || 0;
+    const validPitch = Math.max(-20.0, Math.min(20.0, pitch));
+    if (pitch !== validPitch) {
+      console.warn(
+        `Pitch adjusted from ${pitch} to ${validPitch} to be within valid range (-20.0 to 20.0)`
+      );
+    }
+
+    // 3. Volume gain: valid range is -96.0 to 16.0
+    const volumeGainDb = voiceConfig.volumeGainDb || 0;
+    const validVolumeGainDb = Math.max(-96.0, Math.min(16.0, volumeGainDb));
+    if (volumeGainDb !== validVolumeGainDb) {
+      console.warn(
+        `Volume gain adjusted from ${volumeGainDb} to ${validVolumeGainDb} to be within valid range (-96.0 to 16.0)`
+      );
+    }
+
+    // Configure the request with validated parameters
     const request = {
       input: { ssml },
       voice: {
@@ -136,9 +174,9 @@ export async function generateTTS(
       },
       audioConfig: {
         audioEncoding: "MP3" as const,
-        speakingRate: voiceConfig.speakingRate || 1.0,
-        pitch: voiceConfig.pitch || 0,
-        volumeGainDb: voiceConfig.volumeGainDb || 0,
+        speakingRate: validSpeakingRate,
+        pitch: validPitch,
+        volumeGainDb: validVolumeGainDb,
       },
     };
 
@@ -172,10 +210,18 @@ export function getVoiceConfigFromSettings(voiceSettings: any): VoiceConfig {
   }
 
   // If voiceSettings is a string, try to parse it
-  const settings =
-    typeof voiceSettings === "string"
-      ? JSON.parse(voiceSettings)
-      : voiceSettings;
+  let settings;
+  if (typeof voiceSettings === "string") {
+    try {
+      settings = JSON.parse(voiceSettings);
+    } catch (error) {
+      console.error("Error parsing voice settings JSON:", error);
+      console.warn("Using default voice settings due to parsing error");
+      return DEFAULT_VOICES.professional;
+    }
+  } else {
+    settings = voiceSettings;
+  }
 
   // Get the voice type or default to professional
   const voiceType = settings.type?.toLowerCase() || "professional";
@@ -183,14 +229,28 @@ export function getVoiceConfigFromSettings(voiceSettings: any): VoiceConfig {
   // Get the base voice configuration
   const baseConfig = DEFAULT_VOICES[voiceType] || DEFAULT_VOICES.professional;
 
-  // Override with custom settings if provided
+  // Validate all parameters to ensure they're within valid ranges
+
+  // 1. Speaking rate: valid range is 0.25 to 4.0
+  let speakingRate = settings.speakingRate || baseConfig.speakingRate || 1.0;
+  speakingRate = Math.max(0.25, Math.min(4.0, speakingRate));
+
+  // 2. Pitch: valid range is -20.0 to 20.0
+  let pitch = settings.pitch || baseConfig.pitch || 0;
+  pitch = Math.max(-20.0, Math.min(20.0, pitch));
+
+  // 3. Volume gain: valid range is -96.0 to 16.0
+  let volumeGainDb = settings.volumeGainDb || baseConfig.volumeGainDb || 0;
+  volumeGainDb = Math.max(-96.0, Math.min(16.0, volumeGainDb));
+
+  // Override with custom settings if provided, using validated values
   return {
     ...baseConfig,
     languageCode:
       settings.languageCode || settings.language || baseConfig.languageCode,
-    speakingRate: settings.speakingRate || baseConfig.speakingRate,
-    pitch: settings.pitch || baseConfig.pitch,
-    volumeGainDb: settings.volumeGainDb || baseConfig.volumeGainDb,
+    speakingRate: speakingRate,
+    pitch: pitch,
+    volumeGainDb: volumeGainDb,
   };
 }
 
@@ -209,20 +269,60 @@ export async function generateAndUploadTTS(
   voiceSettings: any
 ): Promise<string> {
   try {
+    console.log(
+      `Starting TTS generation for segment ${segmentId} of event ${eventId}`
+    );
+
+    // Log voice settings for debugging
+    console.log(
+      `Voice settings for segment ${segmentId}:`,
+      typeof voiceSettings === "string"
+        ? voiceSettings.substring(0, 100) + "..."
+        : JSON.stringify(voiceSettings).substring(0, 100) + "..."
+    );
+
     // Get voice configuration
     const voiceConfig = getVoiceConfigFromSettings(voiceSettings);
+    console.log(
+      `Validated voice config for segment ${segmentId}:`,
+      JSON.stringify(voiceConfig)
+    );
 
     // Generate TTS
+    console.log(
+      `Generating TTS audio for segment ${segmentId} with text length: ${text.length} characters`
+    );
     const audioBuffer = await generateTTS(text, voiceConfig);
+    console.log(
+      `Successfully generated TTS audio for segment ${segmentId}, buffer size: ${audioBuffer.length} bytes`
+    );
 
     // Generate S3 key
     const s3Key = generateAudioKey(eventId, segmentId);
+    console.log(`Generated S3 key for segment ${segmentId}: ${s3Key}`);
 
     // Upload to S3
-    await uploadToS3(audioBuffer, s3Key);
+    console.log(`Uploading audio for segment ${segmentId} to S3...`);
+    try {
+      await uploadToS3(audioBuffer, s3Key);
+      console.log(
+        `Successfully uploaded audio for segment ${segmentId} to S3 with key: ${s3Key}`
+      );
 
-    // Return the S3 URL
-    return getS3Url(s3Key);
+      // Return just the S3 key, not the full URL
+      // This will be used to generate presigned URLs on demand
+      return s3Key;
+    } catch (error) {
+      console.error(
+        `Error uploading audio for segment ${segmentId} to S3:`,
+        error
+      );
+      throw new Error(
+        `Failed to upload audio to S3: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
   } catch (error) {
     console.error(
       `Error generating and uploading TTS for segment ${segmentId}:`,
@@ -303,6 +403,9 @@ export function estimateTTSDuration(
   text: string,
   speakingRate: number = 1.0
 ): number {
+  // Ensure speaking rate is within valid range (0.25 to 4.0)
+  const validSpeakingRate = Math.max(0.25, Math.min(4.0, speakingRate));
+
   // Remove SSML tags for calculation
   const cleanText = text.replace(/<[^>]+>/g, "");
 
@@ -311,7 +414,7 @@ export function estimateTTSDuration(
 
   // Calculate duration based on word count and speaking rate
   // Adjust the 150 WPM baseline based on speaking rate
-  const durationInMinutes = wordCount / (150 * speakingRate);
+  const durationInMinutes = wordCount / (150 * validSpeakingRate);
 
   // Convert to seconds and add a small buffer
   return Math.ceil(durationInMinutes * 60) + 2;

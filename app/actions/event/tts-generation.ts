@@ -9,6 +9,7 @@ import {
   deleteSegmentAudio,
   isTTSConfigured,
 } from "@/lib/google-tts";
+import { getPresignedUrl } from "@/lib/s3-utils";
 
 /**
  * Generate TTS for all script segments of an event
@@ -80,30 +81,64 @@ export async function generateTTSForAllSegments(eventId: string) {
           });
 
           // Generate TTS and upload to S3
-          const audioUrl = await generateAndUploadTTS(
+          const s3Key = await generateAndUploadTTS(
             segment.id,
             eventIdNum,
             segment.content,
             event.voice_settings
           );
 
+          // Generate a presigned URL with a longer expiration (24 hours)
+          const presignedUrl = await getPresignedUrl(s3Key, 24 * 3600);
+
+          // Extract voice settings parameters and validate them
+          let speakingRate = 1.0;
+          let pitch = 0;
+          let volumeGainDb = 0;
+
+          try {
+            let settings: any = null;
+
+            if (typeof event.voice_settings === "string") {
+              settings = JSON.parse(event.voice_settings);
+            } else if (
+              typeof event.voice_settings === "object" &&
+              event.voice_settings
+            ) {
+              settings = event.voice_settings;
+            }
+
+            if (settings) {
+              // Extract and validate speaking rate (0.25 to 4.0)
+              speakingRate = settings.speakingRate || 1.0;
+              speakingRate = Math.max(0.25, Math.min(4.0, speakingRate));
+
+              // Extract and validate pitch (-20.0 to 20.0)
+              pitch = settings.pitch || 0;
+              pitch = Math.max(-20.0, Math.min(20.0, pitch));
+
+              // Extract and validate volume gain (-96.0 to 16.0)
+              volumeGainDb = settings.volumeGainDb || 0;
+              volumeGainDb = Math.max(-96.0, Math.min(16.0, volumeGainDb));
+            }
+          } catch (error) {
+            console.warn(
+              "Error parsing voice settings, using default values:",
+              error
+            );
+          }
+
           // Estimate duration based on content
           const estimatedDuration = estimateTTSDuration(
             segment.content,
-            // Extract speaking rate from voice settings if available
-            typeof event.voice_settings === "string"
-              ? JSON.parse(event.voice_settings)?.speakingRate || 1.0
-              : typeof event.voice_settings === "object" && event.voice_settings
-              ? (event.voice_settings as { speakingRate?: number })
-                  .speakingRate || 1.0
-              : 1.0
+            speakingRate
           );
 
           // Update the segment with the audio URL and status
           await db.script_segments.update({
             where: { id: segment.id },
             data: {
-              audio_url: audioUrl,
+              audio_url: s3Key,
               status: "generated",
               timing: estimatedDuration,
             },
@@ -112,7 +147,8 @@ export async function generateTTSForAllSegments(eventId: string) {
           return {
             segmentId: segment.id,
             success: true,
-            audioUrl,
+            s3Key,
+            audioUrl: presignedUrl,
           };
         } catch (error) {
           console.error(
@@ -360,30 +396,61 @@ export async function generateTTSForSegment(segmentId: number) {
 
     try {
       // Generate TTS and upload to S3
-      const audioUrl = await generateAndUploadTTS(
+      const s3Key = await generateAndUploadTTS(
         segmentId,
         segment.event_id,
         segment.content,
         event.voice_settings
       );
 
+      // Extract voice settings parameters and validate them
+      let speakingRate = 1.0;
+      let pitch = 0;
+      let volumeGainDb = 0;
+
+      try {
+        let settings: any = null;
+
+        if (typeof event.voice_settings === "string") {
+          settings = JSON.parse(event.voice_settings);
+        } else if (
+          typeof event.voice_settings === "object" &&
+          event.voice_settings
+        ) {
+          settings = event.voice_settings;
+        }
+
+        if (settings) {
+          // Extract and validate speaking rate (0.25 to 4.0)
+          speakingRate = settings.speakingRate || 1.0;
+          speakingRate = Math.max(0.25, Math.min(4.0, speakingRate));
+
+          // Extract and validate pitch (-20.0 to 20.0)
+          pitch = settings.pitch || 0;
+          pitch = Math.max(-20.0, Math.min(20.0, pitch));
+
+          // Extract and validate volume gain (-96.0 to 16.0)
+          volumeGainDb = settings.volumeGainDb || 0;
+          volumeGainDb = Math.max(-96.0, Math.min(16.0, volumeGainDb));
+        }
+      } catch (error) {
+        console.warn(
+          "Error parsing voice settings, using default values:",
+          error
+        );
+      }
+
       // Estimate duration based on content
       const estimatedDuration = estimateTTSDuration(
         segment.content,
-        // Extract speaking rate from voice settings if available
-        typeof event.voice_settings === "string"
-          ? JSON.parse(event.voice_settings)?.speakingRate || 1.0
-          : typeof event.voice_settings === "object" && event.voice_settings
-          ? (event.voice_settings as { speakingRate?: number })?.speakingRate ||
-            1.0
-          : 1.0
+        speakingRate
       );
 
       // Update the segment with the audio URL and status
       await db.script_segments.update({
         where: { id: segmentId },
         data: {
-          audio_url: audioUrl,
+          audio_url: s3Key,
           status: "generated",
           timing: estimatedDuration,
         },
@@ -416,10 +483,14 @@ export async function generateTTSForSegment(segmentId: number) {
       revalidatePath(`/event/${segment.event_id}`);
       revalidatePath(`/event/${segment.event_id}/script`);
 
+      // Generate a presigned URL with a longer expiration (24 hours)
+      const presignedUrl = await getPresignedUrl(s3Key, 24 * 3600);
+
       return {
         success: true,
         segmentId,
-        audioUrl,
+        s3Key,
+        audioUrl: presignedUrl,
         message: "TTS generated successfully",
       };
     } catch (error) {

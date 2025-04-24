@@ -76,29 +76,59 @@ function AudioPlaybackProvider({ children }: { children: ReactNode }) {
     const unlockAudio = () => {
       console.log("Initializing audio context on user interaction");
 
-      // Create and play a silent audio to unlock audio playback
-      const silentAudio = new Audio(
-        "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABTgD///////////////////////////////////////////8AAAA8TEFNRTMuMTAwAc0AAAAAAAAAABSAJALGQQAAgAAAUi4NqpAAAAAAAAAAAAAAAAD/++DEAAAIoAFnlAAABRiCLPKAAAEEIbn7t9vu/7vd+FBMQglDEFYICAgQhCEJ4nCAIBn/w4EAQ//CCEIQn//CAIAgEAQBAEAQBAEAzcIQhCEIBgCDw+CfP/Lg8HwfB8Hw+D4Ph8Hw+D4Pj/5cHg+D4Pn/ywQBAEAQBAMQTN4gCAIRh+X//hG12kkkkkkk/4hGIRiEMQhGIQjEIhCMQiEYhGIQjEIhGIRiEIxCMQhGIQjEIRiEQjEIhGIRiEIRiEYhGIQjEIRiEYhCEYhGIQjEIRiEYhCEYhEIRiEYhCMQhGIQhGIQjEIRiEIxCEYhGIQjEIRiEYhCEYhGIQjEIRiEYhCMQhCMQhGIQjEQgAIBgEAQCCQyHSTLJJJJJJJJJJJJJJJJJJJPEIxCMQjEIRiEIxCEYhGIQjEIRiEYhCMQhGIRiEIxCEYhCMQjEIRiEIxCEYhGIQjEIRiEYhCEYhGIQjEIRiEIxCEYhGIQhGIRiEIxCEYhGIQjEIRiEIxCMQhGIQjEIRiEYhCMQhGIRiEIxCEIxCMQhGIQjEIRiEIxCEIKAAIAQDwCAAAAAAAAH0AACEAgGAQCBJJJJJJJJJN27f//////mWTk5OScnJycnJyxnJyxv///7m5vyRIBAIBkEhmSSSSSbJJJJJJJJJJJO//tWHfWlDrlWTIgARAQeXrFYoRqoGBx8YH//8KO86JJLZGA1MZbhL2IZxb//9xFKRIoUFDASbQAw0BSs1//8Wfi9nGRZplsNJJHDxwsdXs+NNOI+lQRs7v//8sqoSELsUGClOGBgYVjq8dOT3///4tM4//vgxF8AHD4Q1faKAAMawfK80kACIrYdHWc5rWRJgkAQFAI8dY8DRrh55QkKdSXv///3TOoVCSSdC4wJjgcGgkFg8dEq1Ju///5vXOJCJzowIcLGAYODRFxAadRwpwKMEgEHw+Pwc63u///95tkyJLI2EhxJGgg4OFISiSZtOLX///+VaSJnODYcGCgqPDAQHDRcFDTqdRGOTJGCwkBgYNBf9F3f///2LnMESCsYLBwJGkk6Dg8UEgyNOu9f////LLMKiyMChgiJjQUJCQoLGnLkJgMSNHAVnAh7vd////JZlhQbHBImLjQ8PEhIIiUbHHTXX/////Xk1qoJHRosKjQsICQkKBwyHwgVSIiCRxZAgMPv/X////0LNESDQwKCgkYHB4YFwgaPMqUVx1///5JqPG2/u7u7u7vd3d3TLu7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7d3d6ZJd3d33d3d3d3d3dmSXd3d93d3d3d3d3d3d3d3d3d3d3d3d3d6ZZd3d3d3d3d3d3dmaZd3dmZJd3d2ZJmQDu7szMmaZd3dnFku7u7oAA7u7Mku7u7u7uQDu7u7IAAAzMzMAAAAA="
-      );
-      silentAudio.volume = 0.01;
+      try {
+        // Create a temporary AudioContext to initialize Web Audio API
+        const tempContext = new (window.AudioContext ||
+          (window as any).webkitAudioContext)();
 
-      // Try to play the silent sound to unlock audio
-      silentAudio
-        .play()
-        .then(() => {
-          console.log("Audio context initialized successfully");
-          dispatch(setAudioInitialized(true));
-        })
-        .catch((err) => {
-          console.error("Failed to initialize audio context:", err);
+        // Create a silent oscillator
+        const oscillator = tempContext.createOscillator();
+        const gainNode = tempContext.createGain();
 
-          // Still mark as initialized since we tried
-          dispatch(setAudioInitialized(true));
+        // Set the gain to 0 (silent)
+        gainNode.gain.value = 0;
 
-          toast.error(
-            "Audio playback may be restricted by your browser. Please click on the page first."
+        // Connect the oscillator to the gain node and the gain node to the destination
+        oscillator.connect(gainNode);
+        gainNode.connect(tempContext.destination);
+
+        // Start and stop the oscillator immediately
+        oscillator.start(0);
+        oscillator.stop(0.001);
+
+        // Create a simple audio buffer with silence
+        try {
+          // Create a short buffer of silence
+          const buffer = tempContext.createBuffer(
+            1,
+            1024,
+            tempContext.sampleRate
           );
-        });
+          const source = tempContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(tempContext.destination);
+
+          // Play the buffer
+          source.start(0);
+          source.stop(0.001);
+
+          console.log("Audio buffer initialized successfully");
+        } catch (bufferError) {
+          console.warn("Failed to play audio buffer:", bufferError);
+        }
+
+        console.log("Audio context initialized successfully");
+        dispatch(setAudioInitialized(true));
+      } catch (err) {
+        console.error("Failed to initialize audio context:", err);
+
+        // Still mark as initialized since we tried
+        dispatch(setAudioInitialized(true));
+
+        toast.error(
+          "Audio playback may be restricted by your browser. Please click on the page first."
+        );
+      }
 
       // Remove this listener after initialization
       document.removeEventListener("click", unlockAudio);
@@ -108,6 +138,11 @@ function AudioPlaybackProvider({ children }: { children: ReactNode }) {
     // Add event listeners for user interaction
     document.addEventListener("click", unlockAudio);
     document.addEventListener("touchstart", unlockAudio);
+
+    // Add a message to inform the user they need to interact with the page
+    toast.info("Please click anywhere on the page to enable audio playback", {
+      duration: 5000,
+    });
 
     return () => {
       document.removeEventListener("click", unlockAudio);

@@ -32,7 +32,7 @@ import EventDashboard from "@/components/dashboard/EventDashboard";
 import DeviceManager from "@/components/dashboard/DeviceManager";
 import EventSettings from "@/components/dashboard/EventSettings";
 import LayoutManager from "@/components/dashboard/LayoutManager";
-import EnhancedAudioPlayer from "@/components/dashboard/EnhancedAudioPlayer";
+import SimpleAudioPlayer from "@/components/dashboard/SimpleAudioPlayer";
 import { useDevices } from "@/hooks/useDevices";
 import { RhymeAIChat } from "@/components/RhymeAIChat";
 
@@ -59,10 +59,13 @@ export default function EventDetailPage() {
     audioUrl: string;
     title: string;
     scriptText: string;
+    segmentId?: number; // Add segmentId for presigned URL
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGeneratingLayout, setIsGeneratingLayout] = useState(false);
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+
+  console.log("selectedAudioPreview ID:", selectedAudioPreview);
 
   // Load specific event data
   useEffect(() => {
@@ -307,46 +310,120 @@ export default function EventDetailPage() {
   };
 
   // Handle audio generation
-  const handleGenerateAudio = (segmentId: number) => {
+  const handleGenerateAudio = async (segmentId: number) => {
     if (!event) return;
 
-    // Set status to generating
-    setEvent({
-      ...event,
-      scriptSegments: event.scriptSegments.map((segment) =>
-        segment.id === segmentId
-          ? { ...segment, status: "generating" }
-          : segment
-      ),
-    });
-
-    // Simulate audio generation with timeout
-    setTimeout(() => {
+    try {
+      // Set status to generating in the UI
       setEvent({
         ...event,
         scriptSegments: event.scriptSegments.map((segment) =>
           segment.id === segmentId
-            ? {
-                ...segment,
-                status: "generated",
-                audio: `mock-audio-url-${segmentId}.mp3`,
-              }
+            ? { ...segment, status: "generating" }
             : segment
         ),
       });
-    }, 2000);
+
+      // Call the server action to generate TTS
+      const result = await generateTTSForSegment(segmentId);
+
+      if (result.success) {
+        // Update the UI with the new audio key and presigned URL
+        setEvent({
+          ...event,
+          scriptSegments: event.scriptSegments.map((segment) =>
+            segment.id === segmentId
+              ? {
+                  ...segment,
+                  status: "generated",
+                  audio_url: result.s3Key || null, // Store the S3 key
+                  audio: result.audioUrl || null, // Store the presigned URL for immediate use
+                }
+              : segment
+          ),
+        });
+
+        console.log(
+          `Audio key updated for segment ${segmentId}: ${result.s3Key}`
+        );
+        console.log(`Presigned URL for immediate use: ${result.audioUrl}`);
+
+        toast({
+          title: "Audio generated",
+          description: "Audio has been generated successfully",
+        });
+      } else {
+        // Update the UI to show failure
+        setEvent({
+          ...event,
+          scriptSegments: event.scriptSegments.map((segment) =>
+            segment.id === segmentId
+              ? { ...segment, status: "failed" }
+              : segment
+          ),
+        });
+
+        toast({
+          title: "Error",
+          description: result.error || "Failed to generate audio",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error(`Error generating audio for segment ${segmentId}:`, error);
+
+      // Update the UI to show failure
+      setEvent({
+        ...event,
+        scriptSegments: event.scriptSegments.map((segment) =>
+          segment.id === segmentId ? { ...segment, status: "failed" } : segment
+        ),
+      });
+
+      toast({
+        title: "Error",
+        description: "Failed to generate audio",
+        variant: "destructive",
+      });
+    }
   };
 
   // Handle playing audio for a script segment
-  const handlePlayAudio = (
+  const handlePlayAudio = async (
     audioUrl: string,
     title?: string,
     scriptText?: string
   ) => {
+    if (!audioUrl) {
+      toast({
+        title: "No audio available",
+        description: "This segment doesn't have audio generated yet.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Find the segment ID for the audio URL
+    const segment = event?.scriptSegments.find((s) => s.audio_url === audioUrl);
+
+    if (!segment) {
+      toast({
+        title: "Segment not found",
+        description: "Could not find the segment for this audio.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    console.log(`Playing audio for segment ${segment.id}`);
+
+    // Set the audio preview with the segment ID
+    // The SimpleAudioPlayer will handle getting a presigned URL
     setSelectedAudioPreview({
-      audioUrl,
+      audioUrl: segment.audio_url || "",
       title: title || "Audio Preview",
       scriptText: scriptText || "",
+      segmentId: segment.id,
     });
   };
 
@@ -674,15 +751,30 @@ export default function EventDetailPage() {
                 totalDuration={totalDuration}
                 onNavigateToTab={setActiveTab}
                 onPlayAudio={(audioUrl) => {
+                  // Find segment by audio_url property
                   const segment = event.scriptSegments.find(
-                    (s) => s.audio === audioUrl
+                    (s) => s.audio_url === audioUrl
                   );
+
                   if (segment) {
+                    console.log(
+                      `Playing audio for segment: ${segment.id}, URL: ${audioUrl}`
+                    );
                     handlePlayAudio(
-                      audioUrl,
+                      segment.audio_url || "",
                       `${segment.type} Preview`,
                       segment.content
                     );
+                  } else {
+                    console.error(
+                      `Segment not found for audio URL: ${audioUrl}`
+                    );
+                    toast({
+                      title: "Audio not found",
+                      description:
+                        "The audio for this segment could not be found.",
+                      variant: "destructive",
+                    });
                   }
                 }}
               />
@@ -773,6 +865,23 @@ export default function EventDetailPage() {
             </TabsContent>
           </Tabs>
         </div>
+
+        {/* Audio Preview */}
+        {selectedAudioPreview && (
+          <div className="grid grid-cols-1 gap-6 stagger-animation mb-6">
+            <Card
+              className="animate-slide-up rhyme-card"
+              style={{ animationDelay: "0.2s" }}
+            >
+              <SimpleAudioPlayer
+                title={selectedAudioPreview.title}
+                scriptText={selectedAudioPreview.scriptText}
+                audioUrl={selectedAudioPreview.audioUrl}
+                segmentId={selectedAudioPreview.segmentId}
+              />
+            </Card>
+          </div>
+        )}
 
         {/* AI Assistant */}
         <div className="grid grid-cols-1 gap-6 stagger-animation">
