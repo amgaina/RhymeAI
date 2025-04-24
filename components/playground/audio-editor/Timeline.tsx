@@ -41,7 +41,7 @@ export default function Timeline({
   return (
     <div
       ref={timelineRef}
-      className="h-16 bg-muted rounded-md mb-4 relative cursor-pointer"
+      className="h-10 bg-muted rounded-md mb-2 relative cursor-pointer overflow-x-auto"
       onClick={handleTimelineClick}
     >
       {/* Time markers */}
@@ -54,7 +54,7 @@ export default function Timeline({
             opacity: i % 2 === 0 ? 1 : 0.5,
           }}
         >
-          <div className="text-xs text-muted-foreground absolute -left-3 top-0">
+          <div className="text-[8px] text-muted-foreground absolute -left-2 top-0">
             {formatTime(i * timeMarkerInterval)}
           </div>
         </div>
@@ -64,7 +64,7 @@ export default function Timeline({
       {segments.map((segment) => (
         <div
           key={segment.id}
-          className={`absolute h-8 top-6 rounded-md transition-all ${
+          className={`absolute h-4 top-5 rounded-sm transition-all ${
             segment.status === "generated"
               ? "bg-green-500/30 border border-green-600"
               : segment.status === "generating"
@@ -80,9 +80,9 @@ export default function Timeline({
             }%`,
           }}
         >
-          <div className="text-xs truncate p-1 text-foreground">
-            {segment.content.substring(0, 20)}
-            {segment.content.length > 20 ? "..." : ""}
+          <div className="text-[8px] truncate px-0.5 text-foreground whitespace-nowrap">
+            {segment.content.substring(0, 15)}
+            {segment.content.length > 15 ? "..." : ""}
           </div>
         </div>
       ))}

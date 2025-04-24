@@ -13,36 +13,20 @@ import {
   Play,
   Pause,
   Upload,
-  Trash,
   Lock,
   UnlockIcon,
   MoreHorizontal,
-  Move,
   Scissors,
+  Trash,
 } from "lucide-react";
 import { Waveform } from "@/components/Waveform";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { toast } from "sonner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { AudioSegment, AudioTrack } from "@/types/audio-editor";
 import { useAudioPlayback } from "@/lib/hooks/useAudioPlayback";
 
@@ -94,7 +78,6 @@ export default function Track({
   const [draggingSegment, setDraggingSegment] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState<Record<string, boolean>>({});
   const trackRef = useRef<HTMLDivElement>(null);
-  const [showUploadDialog, setShowUploadDialog] = useState(false);
 
   // Get the actual playing segments to sync UI state
   const { playingSegments } = useAudioPlayback();
@@ -184,77 +167,72 @@ export default function Track({
 
   return (
     <div
-      className={`p-4 rounded-md border-2 transition-all ${
-        isSelected ? "border-primary" : "border-border"
-      } ${track.locked ? "opacity-75" : ""}`}
+      className={`px-1 py-1 ${isSelected ? "bg-muted/40" : ""} ${
+        track.locked ? "opacity-75" : ""
+      }`}
       onClick={onSelect}
     >
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
+      {/* Ultra compact header row */}
+      <div className="flex items-center justify-between mb-0.5 h-6">
+        <div className="flex items-center gap-1 overflow-hidden">
           {renderTrackIcon()}
-          <span className="font-medium">{track.name}</span>
+          <span className="text-xs font-medium truncate max-w-[100px]">
+            {track.name}
+          </span>
+          {track.locked && <Lock className="h-3 w-3 text-muted-foreground" />}
+        </div>
 
-          {track.locked ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleLock?.();
-                    }}
-                  >
-                    <Lock className="h-4 w-4 text-muted-foreground" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Track is locked - click to unlock
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleLock?.();
-                    }}
-                  >
-                    <UnlockIcon className="h-4 w-4 text-muted-foreground" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Track is unlocked - click to lock
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
+        <div className="flex items-center gap-1">
+          {/* Volume control */}
+          <Button
+            variant={track.muted ? "destructive" : "ghost"}
+            size="icon"
+            className="h-5 w-5 p-0"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleMute();
+            }}
+          >
+            {track.muted ? (
+              <VolumeX className="h-3 w-3" />
+            ) : (
+              <Volume2 className="h-3 w-3" />
+            )}
+          </Button>
 
+          <Slider
+            value={[track.volume]}
+            max={100}
+            step={1}
+            onValueChange={(value) => {
+              onVolumeChange(value[0]);
+            }}
+            disabled={track.muted}
+            onClick={(e) => e.stopPropagation()}
+            className="w-20 h-1"
+          />
+
+          {/* More options dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
+                size="icon"
+                className="h-5 w-5 p-0"
                 onClick={(e) => e.stopPropagation()}
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuLabel>Track Options</DropdownMenuLabel>
-              <DropdownMenuSeparator />
+            <DropdownMenuContent align="end" className="w-36">
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
                   onAddSegment();
                 }}
+                className="text-xs py-1 h-7"
               >
-                <PlusCircle className="h-4 w-4 mr-2" />
+                <PlusCircle className="h-3 w-3 mr-1" />
                 Add Segment
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -262,275 +240,189 @@ export default function Track({
                   e.stopPropagation();
                   onImportMedia?.();
                 }}
+                className="text-xs py-1 h-7"
               >
-                <Upload className="h-4 w-4 mr-2" />
+                <Upload className="h-3 w-3 mr-1" />
                 Import Media
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
-                  onToggleMute();
+                  onToggleLock?.();
                 }}
+                className="text-xs py-1 h-7"
               >
-                {track.muted ? (
+                {track.locked ? (
                   <>
-                    <Volume2 className="h-4 w-4 mr-2" />
-                    Unmute Track
+                    <UnlockIcon className="h-3 w-3 mr-1" />
+                    Unlock Track
                   </>
                 ) : (
                   <>
-                    <VolumeX className="h-4 w-4 mr-2" />
-                    Mute Track
+                    <Lock className="h-3 w-3 mr-1" />
+                    Lock Track
                   </>
                 )}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant={track.muted ? "destructive" : "ghost"}
-            size="icon"
-            className="h-8 w-8"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleMute();
-            }}
-            title={track.muted ? "Unmute Track" : "Mute Track"}
-          >
-            {track.muted ? (
-              <VolumeX className="h-4 w-4" />
-            ) : (
-              <Volume2 className="h-4 w-4" />
-            )}
-          </Button>
-          <div className="w-32">
-            <Slider
-              value={[track.volume]}
-              max={100}
-              step={1}
-              onValueChange={(value) => {
-                onVolumeChange(value[0]);
-              }}
-              disabled={track.muted}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        </div>
       </div>
 
-      {/* Track waveform and segments */}
+      {/* Track waveform - minimalist styling */}
       <div
         ref={trackRef}
-        className="h-24 bg-muted rounded-md relative overflow-hidden"
-        style={{ backgroundColor: `${track.color}15` }}
+        className={`${
+          track.segments.length === 0 ? "h-8" : "h-16"
+        } bg-muted/20 relative overflow-hidden`}
+        style={{
+          backgroundColor: `${track.color}08`,
+        }} /* even lighter background */
         onDragOver={handleTrackDragOver}
         onDrop={handleTrackDrop}
       >
-        {/* Timeline units */}
-        {Array.from({ length: Math.ceil(duration / 5) }).map((_, i) => (
+        {/* Timeline ticks - simplified */}
+        {Array.from({ length: Math.ceil(duration / 15) }).map((_, i) => (
           <div
             key={i}
-            className="absolute top-0 h-full border-l border-border/30 pointer-events-none"
+            className="absolute top-0 h-full border-l border-border/20 pointer-events-none"
             style={{
-              left: `${((i * 5) / duration) * 100}%`,
-              opacity: i % 2 === 0 ? 0.7 : 0.3,
+              left: `${((i * 15) / duration) * 100}%`,
+              opacity: 0.3,
             }}
-          >
-            {i % 2 === 0 && (
-              <div className="text-xs text-muted-foreground absolute -left-3 top-0 select-none">
-                {Math.floor((i * 5) / 60)}:
-                {String((i * 5) % 60).padStart(2, "0")}
-              </div>
-            )}
-          </div>
+          />
         ))}
 
         {/* Base waveform visualization */}
         {hasAudio && (
-          <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute inset-0 pointer-events-none opacity-30">
             <Waveform duration={duration} currentTime={currentTime} />
           </div>
         )}
 
-        {/* Current time indicator */}
+        {/* Current time indicator - thinner */}
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-primary z-30 pointer-events-none"
+          className="absolute top-0 bottom-0 w-px bg-primary z-30 pointer-events-none"
           style={{ left: `${(currentTime / duration) * 100}%` }}
         />
 
-        {/* Audio segments with improved width calculation */}
+        {/* Audio segments - simplified styling */}
         {track.segments.map((segment) => {
           const segmentWidth = calculateSegmentWidth(segment);
           const segmentLeft = (segment.startTime / duration) * 100;
-          const segmentDuration = segment.endTime - segment.startTime;
 
           return (
             <div
               key={segment.id}
               draggable={!track.locked}
               onDragStart={(e) => handleSegmentDragStart(e, segment.id)}
-              className={`absolute rounded-md transform transition-transform ${
+              className={`absolute rounded-sm transform ${
                 draggingSegment === segment.id ? "opacity-50" : "opacity-100"
               } ${
                 segment.status === "generated"
-                  ? "bg-green-500/20 hover:bg-green-500/30 border border-green-600/50"
+                  ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-600"
                   : segment.status === "generating"
-                  ? "bg-amber-500/20 hover:bg-amber-500/30 border border-amber-600/50"
+                  ? "bg-amber-500/10 hover:bg-amber-500/20 border-l-2 border-l-amber-600"
                   : segment.status === "failed"
-                  ? "bg-red-500/20 hover:bg-red-500/30 border border-red-600/50"
-                  : "bg-blue-500/20 hover:bg-blue-500/30 border border-blue-600/50"
+                  ? "bg-red-500/10 hover:bg-red-500/20 border-l-2 border-l-red-600"
+                  : "bg-blue-500/10 hover:bg-blue-500/20 border-l-2 border-l-blue-600"
               } ${track.muted ? "opacity-50" : ""} cursor-move group`}
               style={{
-                top: "8px",
+                top: "2px",
                 left: `${segmentLeft}%`,
                 width: `${segmentWidth}%`,
-                height: "calc(100% - 16px)",
+                height: "calc(100% - 4px)",
               }}
               onClick={(e) => e.stopPropagation()}
-              title={`${segment.content.substring(0, 50)}${
-                segment.content.length > 50 ? "..." : ""
-              } (${formatDuration(segmentDuration)})`}
+              title={segment.content}
             >
-              {/* Segment content preview with duration */}
-              <div className="text-xs p-1 truncate max-w-full">
-                <span>
-                  {segment.content.substring(0, 20)}
-                  {segment.content.length > 20 ? "..." : ""}
-                </span>
-                <span className="text-[9px] text-muted-foreground ml-1">
-                  ({formatDuration(segmentDuration)})
-                </span>
+              {/* Minimal content text */}
+              <div className="text-[9px] p-0.5 truncate max-w-full opacity-80">
+                {segment.content.substring(0, 15)}
+                {segment.content.length > 15 ? "..." : ""}
               </div>
 
-              {/* Segment controls */}
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 rounded-md">
-                <div className="flex gap-1">
+              {/* Simplified controls */}
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/10">
+                <div className="flex gap-0.5">
                   {segment.audioUrl && (
                     <>
                       <Button
                         size="sm"
-                        variant={
-                          track.muted
-                            ? "destructive"
-                            : isPlaying[segment.id]
-                            ? "default"
-                            : "secondary"
-                        }
-                        className="h-7 w-7 p-0"
+                        variant="ghost"
+                        className="h-5 w-5 p-0 bg-background/60"
                         onClick={() => handleSegmentPlay(segment.id)}
-                        title={
-                          track.muted
-                            ? "Track is muted"
-                            : isPlaying[segment.id]
-                            ? "Pause"
-                            : "Play"
-                        }
                       >
                         {isPlaying[segment.id] ? (
-                          <Pause className="h-3 w-3" />
+                          <Pause className="h-2.5 w-2.5" />
                         ) : (
-                          <Play className="h-3 w-3" />
+                          <Play className="h-2.5 w-2.5" />
                         )}
                       </Button>
 
-                      {/* Add trim button for imported audio */}
                       {onTrimSegment && (
                         <Button
                           size="sm"
-                          variant="secondary"
-                          className="h-7 w-7 p-0"
+                          variant="ghost"
+                          className="h-5 w-5 p-0 bg-background/60"
                           onClick={(e) => {
                             e.stopPropagation();
                             onTrimSegment(segment.id);
                           }}
                           title="Trim Audio"
                         >
-                          <Scissors className="h-3 w-3" />
+                          <Scissors className="h-2.5 w-2.5" />
                         </Button>
                       )}
                     </>
                   )}
 
+                  {/* Add back the delete button */}
                   {onDeleteSegment && (
                     <Button
                       size="sm"
-                      variant="secondary"
-                      className="h-7 w-7 p-0"
-                      onClick={() => onDeleteSegment(segment.id)}
+                      variant="ghost"
+                      className="h-5 w-5 p-0 bg-background/60"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteSegment(segment.id);
+                      }}
+                      title="Delete Segment"
                     >
-                      <Trash className="h-3 w-3" />
+                      <Trash className="h-2.5 w-2.5" />
                     </Button>
                   )}
                 </div>
               </div>
-
-              {/* Drag handle */}
-              <div className="absolute top-1 right-1 text-xs bg-primary/20 rounded p-0.5">
-                <Move className="h-3 w-3" />
-              </div>
-
-              {/* Segment status indicator */}
-              <div className="absolute bottom-1 right-1 text-xs">
-                {segment.status === "generated" && (
-                  <span className="text-green-600 bg-green-100 px-1 rounded text-[10px]">
-                    Ready
-                  </span>
-                )}
-                {segment.status === "generating" && (
-                  <span className="text-amber-600 bg-amber-100 px-1 rounded text-[10px]">
-                    Generating
-                  </span>
-                )}
-                {segment.status === "failed" && (
-                  <span className="text-red-600 bg-red-100 px-1 rounded text-[10px]">
-                    Failed
-                  </span>
-                )}
-                {segment.status === "draft" && (
-                  <span className="text-blue-600 bg-blue-100 px-1 rounded text-[10px]">
-                    Draft
-                  </span>
-                )}
-              </div>
-
-              {/* Add muted indicator for segments in muted tracks */}
-              {track.muted && (
-                <div className="absolute top-1 left-1 text-xs">
-                  <VolumeX className="h-3 w-3 text-red-600" />
-                </div>
-              )}
             </div>
           );
         })}
 
-        {/* Empty state message */}
+        {/* Empty state - minimal text */}
         {!hasAudio && track.segments.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-sm text-muted-foreground">
+            <span className="text-[9px] text-muted-foreground">
               {track.type === "emcee"
-                ? "Add segments and generate audio to see waveform"
+                ? "Add script"
                 : track.type === "background"
-                ? "Add background music to see waveform"
-                : "Add sound effects to see waveform"}
+                ? "Add music"
+                : "Add effects"}
             </span>
           </div>
         )}
 
-        {/* Add segment button overlay */}
+        {/* Add segment button - tiny */}
         {!track.locked && (
           <Button
             variant="ghost"
             size="sm"
-            className="absolute bottom-2 right-2 h-7 opacity-70 hover:opacity-100 bg-background/80"
+            className="absolute bottom-0.5 right-0.5 h-4 text-[9px] p-0 opacity-40 hover:opacity-100 bg-background/40"
             onClick={(e) => {
               e.stopPropagation();
               onAddSegment();
             }}
           >
-            <PlusCircle className="h-3 w-3 mr-1" />
+            <PlusCircle className="h-2.5 w-2.5 mr-0.5" />
             Add
           </Button>
         )}

@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus } from "lucide-react";
+
+import AddTrackDialog from "@/components/playground/audio-editor/AddTrackDialog";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
 
@@ -49,6 +50,8 @@ import {
   toggleTrackLock,
   updateTrackVolume,
   setIsLoading,
+  addTrack,
+  deleteSegment,
 } from "@/components/providers/AudioPlaybackProvider";
 
 // Import audio playback hook
@@ -441,87 +444,29 @@ export default function AudioEditorPlayground() {
   };
 
   return (
-    <div className="container py-8">
-      <h1 className="text-3xl font-bold mb-4 text-center">
-        Audio Editor Playground
-      </h1>
-      <p className="text-center mb-8 text-muted-foreground">
-        Edit emcee scripts in layers with background sounds and presentation
-        sync.
-      </p>
+    <div className="h-screen mx-4 flex flex-col overflow-hidden">
+      {/* Header area with presentation preview */}
+      <div className="flex items-center justify-between p-2 border-b">
+        <div>
+          <h1 className="text-xl font-bold">Audio Editor</h1>
+          <p className="text-xs text-muted-foreground">
+            Edit emcee scripts with background sounds and presentation sync
+          </p>
+        </div>
 
-      {/* Add test audio button */}
-      <div className="mb-4 flex justify-center">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            try {
-              // Create a temporary AudioContext to initialize Web Audio API
-              const AudioContext =
-                window.AudioContext || (window as any).webkitAudioContext;
-              const audioContext = new AudioContext();
-
-              // Create a silent oscillator
-              const oscillator = audioContext.createOscillator();
-              const gainNode = audioContext.createGain();
-
-              // Set the gain to 0 (silent)
-              gainNode.gain.value = 0;
-
-              // Connect the oscillator to the gain node and the gain node to the destination
-              oscillator.connect(gainNode);
-              gainNode.connect(audioContext.destination);
-
-              // Start and stop the oscillator immediately
-              oscillator.start(0);
-              oscillator.stop(0.001);
-
-              // Create a simple audio buffer with silence
-              try {
-                // Create a short buffer of silence
-                const buffer = audioContext.createBuffer(
-                  1,
-                  1024,
-                  audioContext.sampleRate
-                );
-                const source = audioContext.createBufferSource();
-                source.buffer = buffer;
-                source.connect(audioContext.destination);
-
-                // Play the buffer
-                source.start(0);
-                source.stop(0.001);
-
-                toast.success("Audio test successful!");
-                console.log("Audio buffer initialized successfully");
-              } catch (bufferError) {
-                console.warn("Failed to play audio buffer:", bufferError);
-                toast.error(
-                  "Audio buffer test failed: " +
-                    (bufferError instanceof Error
-                      ? bufferError.message
-                      : String(bufferError))
-                );
-              }
-
-              console.log("Audio context initialized successfully");
-            } catch (error) {
-              console.error("Failed to initialize audio context:", error);
-              toast.error(
-                "Audio test failed: " +
-                  (error instanceof Error ? error.message : String(error))
-              );
-            }
-          }}
-        >
-          Test Audio
-        </Button>
+        {/* Presentation preview */}
+        <div className="bg-muted rounded-md w-[200px] h-[112px] flex items-center justify-center">
+          <span className="text-xs text-muted-foreground">
+            Presentation Preview
+          </span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        <Card>
-          <CardContent className="p-6">
+      {/* Main content area - fills remaining height */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Timeline and controls - fixed height */}
+        <div className="p-1 border-b">
+          <div className="overflow-x-auto">
             <Timeline
               duration={project.duration}
               currentTime={currentTime}
@@ -537,106 +482,152 @@ export default function AudioEditorPlayground() {
               }}
               formatTime={formatTime}
             />
+          </div>
 
-            <div className="mb-4">
-              <AudioControls
-                isPlaying={isPlaying}
-                currentTime={currentTime}
-                duration={project.duration}
-                volume={masterVolume}
-                onPlayPause={togglePlayback}
-                onSkipBack={() => {
-                  stopAllAudio();
-                  dispatch(setCurrentTime(Math.max(0, currentTime - 5)));
-                }}
-                onSkipForward={() => {
-                  stopAllAudio();
-                  dispatch(
-                    setCurrentTime(Math.min(project.duration, currentTime + 5))
-                  );
-                }}
-                onVolumeChange={(newVolume) =>
-                  dispatch(setMasterVolume(newVolume))
-                }
-                onSave={() => toast.info("Save functionality coming soon")}
-                onImport={() =>
-                  toast.info("Import will be implemented in the next update")
-                }
-                onExport={() => toast.info("Export functionality coming soon")}
-                formatTime={formatTime}
-                isLoading={isLoading}
-              />
+          <div className="mt-1">
+            <AudioControls
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              duration={project.duration}
+              volume={masterVolume}
+              onPlayPause={togglePlayback}
+              onSkipBack={() => {
+                stopAllAudio();
+                dispatch(setCurrentTime(Math.max(0, currentTime - 5)));
+              }}
+              onSkipForward={() => {
+                stopAllAudio();
+                dispatch(
+                  setCurrentTime(Math.min(project.duration, currentTime + 5))
+                );
+              }}
+              onVolumeChange={(newVolume) =>
+                dispatch(setMasterVolume(newVolume))
+              }
+              onSave={() => toast.info("Save functionality coming soon")}
+              onImport={() =>
+                toast.info("Import will be implemented in the next update")
+              }
+              onExport={() => toast.info("Export functionality coming soon")}
+              formatTime={formatTime}
+              isLoading={isLoading}
+            />
 
-              <div className="text-xs text-muted-foreground text-center mt-1">
-                {getPlayingSegmentsInfo()}
-              </div>
+            <div className="text-xs text-muted-foreground text-center">
+              {getPlayingSegmentsInfo()}
             </div>
+          </div>
+        </div>
 
-            <div className="space-y-4 mb-6">
+        {/* Tracks and tabs container - fills remaining space */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Tracks section - fills available space with scrolling */}
+          <div className="flex-1 overflow-y-auto p-1">
+            <div className="space-y-0.5 mb-1">
               {project.tracks.map((track) => (
-                <Track
-                  key={track.id}
-                  track={track}
-                  isSelected={selectedTrack === track.id}
-                  currentTime={currentTime}
-                  duration={project.duration}
-                  onSelect={() => dispatch(setSelectedTrack(track.id))}
-                  onVolumeChange={(volume) =>
-                    dispatch(updateTrackVolume({ trackId: track.id, volume }))
-                  }
-                  onToggleMute={() => dispatch(toggleTrackMute(track.id))}
-                  onAddSegment={() =>
-                    toast.info("Add segment functionality coming soon")
-                  }
-                  onPlaySegment={playSegmentAudio}
-                  onDeleteSegment={() =>
-                    toast.info("Delete segment functionality coming soon")
-                  }
-                  onMoveSegment={() =>
-                    toast.info("Move segment functionality coming soon")
-                  }
-                  onToggleLock={() => dispatch(toggleTrackLock(track.id))}
-                  onImportMedia={() => importMediaToTrack(track.id)}
-                  formatDuration={formatDuration}
-                  onTrimSegment={handleTrimSegment}
-                />
+                <div
+                  key={`track-container-${track.id}`}
+                  className="rounded-none hover:bg-accent/5 transition-colors"
+                >
+                  <Track
+                    key={track.id}
+                    track={track}
+                    isSelected={selectedTrack === track.id}
+                    currentTime={currentTime}
+                    duration={project.duration}
+                    onSelect={() => dispatch(setSelectedTrack(track.id))}
+                    onVolumeChange={(volume) =>
+                      dispatch(updateTrackVolume({ trackId: track.id, volume }))
+                    }
+                    onToggleMute={() => dispatch(toggleTrackMute(track.id))}
+                    onAddSegment={() =>
+                      toast.info("Add segment functionality coming soon")
+                    }
+                    onPlaySegment={playSegmentAudio}
+                    onDeleteSegment={(segmentId) => {
+                      // Find the segment to get its info for the toast message
+                      const segment = allSegments.find(
+                        (s) => s.id === segmentId
+                      );
+
+                      if (!segment) {
+                        toast.error("Segment not found");
+                        return;
+                      }
+
+                      const segmentName = segment.content || "segment";
+
+                      // Stop audio playback if this segment is playing
+                      if (segment.audioUrl) {
+                        stopAllAudio();
+
+                        // If it's a blob URL, revoke it to free up memory
+                        if (segment.audioUrl.startsWith("blob:")) {
+                          try {
+                            revokeAudioFileUrl(segment.audioUrl);
+                            console.log(
+                              `Revoked blob URL for deleted segment: ${segmentId}`
+                            );
+                          } catch (error) {
+                            console.error("Error revoking blob URL:", error);
+                          }
+                        }
+                      }
+
+                      // Delete the segment
+                      dispatch(deleteSegment(segmentId));
+
+                      // Show success message
+                      toast.success(`Deleted ${segmentName}`);
+                    }}
+                    onMoveSegment={() =>
+                      toast.info("Move segment functionality coming soon")
+                    }
+                    onToggleLock={() => dispatch(toggleTrackLock(track.id))}
+                    onImportMedia={() => importMediaToTrack(track.id)}
+                    formatDuration={formatDuration}
+                    onTrimSegment={handleTrimSegment}
+                  />
+                </div>
               ))}
 
-              <Button
-                variant="outline"
-                className="w-full flex items-center gap-2"
-                onClick={() =>
-                  toast.info("Track creation functionality coming soon")
-                }
-              >
-                <Plus className="h-4 w-4" />
-                Add Track
-              </Button>
+              {/* Add track button */}
+              <div className="text-center py-1">
+                <AddTrackDialog
+                  onAddTrack={(type, name) => {
+                    dispatch(addTrack({ type, name }));
+                    toast.success(`Added new ${type} track: ${name}`);
+                  }}
+                />
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Tabs section remains largely unchanged */}
-        <Tabs defaultValue="script" className="w-full">
-          <TabsList className="grid grid-cols-3 w-full">
-            <TabsTrigger value="script">Emcee Script</TabsTrigger>
-            <TabsTrigger value="background">Background Sounds</TabsTrigger>
-            <TabsTrigger value="presentation">Presentation</TabsTrigger>
-          </TabsList>
+          {/* Tabs section - fixed height for panel content */}
+          <div className="h-[300px] border-t">
+            <Tabs defaultValue="script" className="w-full h-full">
+              <TabsList className="w-full grid grid-cols-3 bg-muted">
+                <TabsTrigger value="script">Emcee Script</TabsTrigger>
+                <TabsTrigger value="background">Background</TabsTrigger>
+                <TabsTrigger value="presentation">Presentation</TabsTrigger>
+              </TabsList>
 
-          {/* Script editor tab */}
-          <TabsContent value="script">{/* ...existing code... */}</TabsContent>
+              <div className="p-2 h-[calc(100%-40px)] overflow-auto">
+                <TabsContent value="script" className="m-0 h-full">
+                  {/* ...existing code... */}
+                </TabsContent>
 
-          {/* Background tab */}
-          <TabsContent value="background">
-            {/* ...existing code... */}
-          </TabsContent>
+                <TabsContent value="background" className="m-0 h-full">
+                  {/* ...existing code... */}
+                </TabsContent>
 
-          {/* Presentation tab */}
-          <TabsContent value="presentation">
-            {/* ...existing code... */}
-          </TabsContent>
-        </Tabs>
+                <TabsContent value="presentation" className="m-0 h-full">
+                  {/* ...existing code... */}
+                </TabsContent>
+              </div>
+            </Tabs>
+          </div>
+        </div>
       </div>
 
       {trimming && (

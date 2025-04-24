@@ -139,6 +139,23 @@ export const projectSlice = createSlice({
         }
       });
     },
+    deleteSegment: (state, action: PayloadAction<string>) => {
+      const segmentId = action.payload;
+
+      // Find the track that contains this segment
+      state.project.tracks.forEach((track) => {
+        // Filter out the segment with the matching ID
+        const initialLength = track.segments.length;
+        track.segments = track.segments.filter(
+          (segment) => segment.id !== segmentId
+        );
+
+        // If we removed a segment, log it
+        if (track.segments.length < initialLength) {
+          console.log(`Deleted segment ${segmentId} from track ${track.id}`);
+        }
+      });
+    },
 
     // UI actions
     setSelectedTrack: (state, action: PayloadAction<number>) => {
@@ -156,6 +173,43 @@ export const projectSlice = createSlice({
     setTrimming: (state, action: PayloadAction<TrimSettings | null>) => {
       state.ui.trimming = action.payload;
     },
+    addTrack: (
+      state,
+      action: PayloadAction<{
+        type: "emcee" | "background" | "effects";
+        name: string;
+      }>
+    ) => {
+      // Find the highest track ID and increment by 1
+      const maxId = state.project.tracks.reduce(
+        (max, track) => Math.max(max, track.id),
+        0
+      );
+      const newId = maxId + 1;
+
+      // Create a new track with default values
+      const newTrack: AudioTrack = {
+        id: newId,
+        type: action.payload.type,
+        name: action.payload.name,
+        volume: 80,
+        muted: false,
+        color:
+          action.payload.type === "emcee"
+            ? "#4f46e5"
+            : action.payload.type === "background"
+            ? "#10b981"
+            : "#f59e0b",
+        locked: false,
+        segments: [],
+      };
+
+      // Add the new track to the project
+      state.project.tracks.push(newTrack);
+
+      // Select the new track
+      state.ui.selectedTrack = newId;
+    },
   },
 });
 
@@ -167,11 +221,13 @@ export const {
   toggleTrackLock,
   addSegments,
   updateSegmentTiming,
+  deleteSegment,
   setSelectedTrack,
   setZoomLevel,
   setIsLoading,
   setEditingScript,
   setTrimming,
+  addTrack,
 } = projectSlice.actions;
 
 // Selectors - Add explicit type annotations to parameters
