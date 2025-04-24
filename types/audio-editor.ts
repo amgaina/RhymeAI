@@ -9,7 +9,6 @@ export interface AudioSegment {
   endTime: number;
   content: string;
   audioUrl: string | null;
-  // Using a more specific subset of statuses that are compatible with all components
   status: AudioSegmentStatus;
 }
 
@@ -96,7 +95,6 @@ export interface AudioManager {
 
 /**
  * Helper function to convert from ScriptSegmentStatus to AudioSegmentStatus
- * This ensures compatibility when loading from different data sources
  */
 export function adaptSegmentStatus(
   status: ScriptSegmentStatus
@@ -110,13 +108,6 @@ export function adaptSegmentStatus(
       return "generated";
     case "failed":
       return "failed";
-    case "editing":
-    case "approved":
-    case "rejected":
-    case "published":
-    case "archived":
-      // Map to the closest compatible status
-      return "generated";
     default:
       return "draft";
   }

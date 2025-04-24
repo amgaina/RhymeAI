@@ -26,6 +26,7 @@ export type {
   TrimSettings,
   AudioManager,
   AudioManagerCallbacks,
+  AudioSegmentStatus,
 } from "@/types/audio-editor";
 
 // Wrapper for the Redux provider
@@ -187,4 +188,17 @@ function AudioPlaybackProvider({ children }: { children: ReactNode }) {
 
 // Export hooks and actions for use in components
 export { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
+
+// Re-export from slices but ensure they're documented properly
 export * from "@/lib/redux/slices";
+
+// Add a comment to help developers use selectors correctly
+/**
+ * IMPORTANT: When using selectors that return arrays or objects, always use the memoized versions:
+ * - selectAllSegments - returns all segments from all tracks
+ * - selectTracks - returns all tracks
+ * - selectSegmentById - returns a specific segment by ID
+ * - selectSegmentsByTrackId - returns all segments for a specific track
+ *
+ * These selectors are memoized to prevent unnecessary re-renders.
+ */

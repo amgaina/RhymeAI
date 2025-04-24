@@ -1,10 +1,6 @@
 import { configureStore } from "@reduxjs/toolkit";
-import {
-  audioReducer,
-  projectReducer,
-  AudioPlaybackState,
-  ProjectState,
-} from "./slices";
+import { audioReducer, projectReducer, AudioPlaybackState } from "./slices";
+import { ProjectState } from "./slices/projectSlice";
 // Define the root state interface explicitly
 export interface RootState {
   audio: AudioPlaybackState;

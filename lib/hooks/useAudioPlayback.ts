@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import audioRegistry from "@/lib/audio-registry";
 import { AudioSegment, AudioTrack } from "@/types/audio-editor";
@@ -33,9 +33,9 @@ export function useAudioPlayback() {
   const audioManager = useAppSelector(selectAudioManager);
   const audioElementIds = useAppSelector(selectAudioElementIds);
   const playingSegments = useAppSelector(selectPlayingSegments);
-  const allSegments = useAppSelector(selectAllSegments);
+  const allSegments = useAppSelector(selectAllSegments); // This now uses the memoized selector
   const masterVolume = useAppSelector(selectMasterVolume);
-  const tracks = useAppSelector(selectTracks);
+  const tracks = useAppSelector(selectTracks); // This now uses the memoized selector
   const audioInitialized = useAppSelector(selectAudioInitialized);
   const currentTime = useAppSelector(selectCurrentTime);
 
@@ -420,6 +420,16 @@ export function useAudioPlayback() {
     });
   }, [tracks, masterVolume, playingSegments, allSegments, dispatch]);
 
+  // Memo-ize any derived values from segments or tracks
+  const currentSegmentsAtTime = useMemo(() => {
+    return allSegments.filter(
+      (segment) =>
+        segment.audioUrl &&
+        currentTime >= segment.startTime &&
+        currentTime <= segment.endTime
+    );
+  }, [allSegments, currentTime]);
+
   return {
     isPlaying,
     togglePlayback,
@@ -428,5 +438,7 @@ export function useAudioPlayback() {
     cleanupAudio,
     getAudioElement,
     playingSegments,
+    // Add the new memoized value
+    currentSegmentsAtTime,
   };
 }

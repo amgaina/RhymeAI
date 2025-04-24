@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import AddTrackDialog from "@/components/playground/audio-editor/AddTrackDialog";
+import AddTrackDialog, {
+  AddTrackDialogRef,
+} from "@/components/playground/audio-editor/AddTrackDialog";
+import ShortcutsDialog from "@/components/playground/audio-editor/ShortcutsDialog";
+import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
+import {
+  createShortcuts,
+  flattenShortcuts,
+} from "@/lib/shortcuts/audioEditorShortcuts";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
 
@@ -40,7 +48,6 @@ import {
   selectEditingScript,
   selectTrimming,
   setCurrentTime,
-  setMasterVolume,
   setSelectedTrack,
   addSegments,
   updateSegmentTiming,
@@ -52,6 +59,8 @@ import {
   setIsLoading,
   addTrack,
   deleteSegment,
+  setZoomLevel,
+  setMasterVolume,
 } from "@/components/providers/AudioPlaybackProvider";
 
 // Import audio playback hook
@@ -113,6 +122,214 @@ export default function AudioEditorPlayground() {
   // Audio playback hooks
   const { isPlaying, togglePlayback, playSegmentAudio, stopAllAudio } =
     useAudioPlayback();
+
+  // Reference to track dialog
+  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
+  const addTrackDialogRef = useRef<{ openDialog: () => void } | null>(null);
+
+  // Define keyboard shortcut actions
+  const shortcutActions = {
+    // Playback controls
+    togglePlayPause: () => togglePlayback(),
+    stopPlayback: () => stopAllAudio(),
+    skipForward: () => {
+      stopAllAudio();
+      dispatch(setCurrentTime(Math.min(project.duration, currentTime + 5)));
+    },
+    skipBackward: () => {
+      stopAllAudio();
+      dispatch(setCurrentTime(Math.max(0, currentTime - 5)));
+    },
+
+    // Volume controls
+    increaseVolume: () => {
+      const newVolume = Math.min(100, masterVolume + 5);
+      dispatch(setMasterVolume(newVolume));
+      toast.info(`Volume: ${newVolume}%`);
+    },
+    decreaseVolume: () => {
+      const newVolume = Math.max(0, masterVolume - 5);
+      dispatch(setMasterVolume(newVolume));
+      toast.info(`Volume: ${newVolume}%`);
+    },
+    toggleMute: () => {
+      // Toggle mute on the selected track
+      if (selectedTrack) {
+        dispatch(toggleTrackMute(selectedTrack));
+        const track = project.tracks.find((t) => t.id === selectedTrack);
+        if (track) {
+          toast.info(`${track.name} ${track.muted ? "unmuted" : "muted"}`);
+        }
+      }
+    },
+
+    // Track management
+    addTrack: () => {
+      if (addTrackDialogRef.current) {
+        addTrackDialogRef.current.openDialog();
+      }
+    },
+    selectNextTrack: () => {
+      const trackIds = project.tracks.map((t) => t.id);
+
+      // Handle null selectedTrack case
+      if (selectedTrack === null) {
+        // If no track is selected, select the first track
+        if (trackIds.length > 0) {
+          dispatch(setSelectedTrack(trackIds[0]));
+        }
+        return;
+      }
+
+      const currentIndex = trackIds.indexOf(selectedTrack);
+      if (currentIndex < trackIds.length - 1) {
+        dispatch(setSelectedTrack(trackIds[currentIndex + 1]));
+      }
+    },
+    selectPreviousTrack: () => {
+      const trackIds = project.tracks.map((t) => t.id);
+
+      // Handle null selectedTrack case
+      if (selectedTrack === null) {
+        // If no track is selected, select the last track
+        if (trackIds.length > 0) {
+          dispatch(setSelectedTrack(trackIds[trackIds.length - 1]));
+        }
+        return;
+      }
+
+      const currentIndex = trackIds.indexOf(selectedTrack);
+      if (currentIndex > 0) {
+        dispatch(setSelectedTrack(trackIds[currentIndex - 1]));
+      }
+    },
+    toggleTrackLock: () => {
+      if (selectedTrack !== null) {
+        dispatch(toggleTrackLock(selectedTrack));
+        const track = project.tracks.find((t) => t.id === selectedTrack);
+        if (track) {
+          toast.info(`${track.name} ${track.locked ? "unlocked" : "locked"}`);
+        }
+      } else {
+        toast.info("Please select a track first");
+      }
+    },
+    toggleTrackMute: () => {
+      if (selectedTrack !== null) {
+        dispatch(toggleTrackMute(selectedTrack));
+        const track = project.tracks.find((t) => t.id === selectedTrack);
+        if (track) {
+          toast.info(`${track.name} ${track.muted ? "unmuted" : "muted"}`);
+        }
+      } else {
+        toast.info("Please select a track first");
+      }
+    },
+
+    // Segment management
+    addSegment: () => {
+      toast.info("Add segment functionality coming soon");
+    },
+    deleteSelectedSegment: () => {
+      // Find the currently selected segment (if any)
+      // For now, we'll just show a message
+      toast.info("Delete segment shortcut - select a segment first");
+    },
+    trimSegment: () => {
+      // For now, we'll just show a message
+      toast.info("Trim segment shortcut - select a segment first");
+    },
+
+    // Timeline navigation
+    zoomIn: () => {
+      dispatch(setZoomLevel(Math.min(5, zoomLevel + 0.5)));
+      toast.info(`Zoom level: ${Math.min(5, zoomLevel + 0.5)}`);
+    },
+    zoomOut: () => {
+      dispatch(setZoomLevel(Math.max(0.5, zoomLevel - 0.5)));
+      toast.info(`Zoom level: ${Math.max(0.5, zoomLevel - 0.5)}`);
+    },
+    moveToStart: () => {
+      stopAllAudio();
+      dispatch(setCurrentTime(0));
+    },
+    moveToEnd: () => {
+      stopAllAudio();
+      dispatch(setCurrentTime(project.duration));
+    },
+
+    // Clipboard operations
+    cut: () => {
+      toast.info("Cut functionality coming soon");
+    },
+    copy: () => {
+      toast.info("Copy functionality coming soon");
+    },
+    paste: () => {
+      toast.info("Paste functionality coming soon");
+    },
+
+    // Misc
+    save: () => {
+      toast.info("Save functionality coming soon");
+    },
+    undo: () => {
+      toast.info("Undo functionality coming soon");
+    },
+    redo: () => {
+      toast.info("Redo functionality coming soon");
+    },
+    showShortcuts: () => {
+      setShowShortcutsDialog(true);
+    },
+
+    // Additional controls
+    splitSegment: () => {
+      toast.info("Split segment functionality coming soon");
+    },
+    mergeSegments: () => {
+      toast.info("Merge segments functionality coming soon");
+    },
+    duplicateSegment: () => {
+      toast.info("Duplicate segment functionality coming soon");
+    },
+    selectAll: () => {
+      toast.info("Select all functionality coming soon");
+    },
+    deselectAll: () => {
+      toast.info("Deselect all functionality coming soon");
+    },
+
+    // Navigation
+    goToNextMarker: () => {
+      toast.info("Go to next marker functionality coming soon");
+    },
+    goToPreviousMarker: () => {
+      toast.info("Go to previous marker functionality coming soon");
+    },
+
+    // View controls
+    toggleFullscreen: () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+        toast.info("Exited fullscreen mode");
+      } else {
+        document.documentElement.requestFullscreen();
+        toast.info("Entered fullscreen mode");
+      }
+    },
+    toggleWaveform: () => {
+      toast.info("Toggle waveform view functionality coming soon");
+    },
+    toggleGrid: () => {
+      toast.info("Toggle grid functionality coming soon");
+    },
+  };
+
+  // Create and register keyboard shortcuts
+  const shortcutGroups = createShortcuts(shortcutActions);
+  const shortcuts = flattenShortcuts(shortcutGroups);
+  useKeyboardShortcuts(shortcuts);
 
   // References for file management
   const fileUrlsRef = useRef<string[]>([]);
@@ -356,6 +573,110 @@ export default function AudioEditorPlayground() {
     input.click();
   };
 
+  const handleDirectFileDrop = async (
+    trackId: number,
+    files: File[],
+    dropPosition: number
+  ) => {
+    const track = project.tracks.find((t) => t.id === trackId);
+    if (!track) {
+      toast.error("Track not found");
+      return;
+    }
+
+    if (track.locked) {
+      toast.error("Cannot import media to a locked track");
+      return;
+    }
+
+    try {
+      dispatch(setIsLoading(true));
+
+      // Use the drop position as the start time for the first segment
+      let segmentStartTime = dropPosition;
+      const newSegments: ImportedSegment[] = [];
+
+      // Process each file directly (similar to importMediaToTrack but without file picker)
+      for (const file of files) {
+        if (
+          !file.type.startsWith("audio/") &&
+          !file.name.endsWith(".mp3") &&
+          !file.name.endsWith(".wav") &&
+          !file.name.endsWith(".m4a") &&
+          !file.name.endsWith(".ogg")
+        ) {
+          toast.error(`${file.name} is not an audio file`);
+          continue;
+        }
+
+        try {
+          // Create blob URL for the file
+          const fileUrl = createAudioFileUrl(file);
+          console.log(`Created blob URL for ${file.name}: ${fileUrl}`);
+          fileUrlsRef.current.push(fileUrl);
+
+          // Get audio duration
+          let duration: number;
+          try {
+            duration = await getAudioFileDuration(fileUrl);
+            console.log(`Detected duration for ${file.name}: ${duration}s`);
+          } catch (error) {
+            console.warn(
+              `Could not detect duration for ${file.name}. Using fallback.`
+            );
+            duration = 30; // Fallback duration
+          }
+
+          // Create segment
+          const segment: ImportedSegment = {
+            id: uuidv4(),
+            startTime: segmentStartTime,
+            endTime: segmentStartTime + duration,
+            content: file.name,
+            audioUrl: fileUrl,
+            status: "generated",
+          };
+
+          newSegments.push(segment);
+          segmentStartTime += duration + 1; // Add 1-second gap
+        } catch (error) {
+          console.error(`Error processing file ${file.name}:`, error);
+          toast.error(`Failed to process ${file.name}`);
+        }
+      }
+
+      if (newSegments.length === 0) {
+        toast.error("No valid audio files were imported");
+        return;
+      }
+
+      // Add segments to track
+      dispatch(addSegments({ trackId, segments: newSegments }));
+      toast.success(
+        `Added ${newSegments.length} audio file(s) to ${track.name}`
+      );
+
+      // Show trimmer for single file uploads
+      if (newSegments.length === 1) {
+        setTimeout(() => {
+          dispatch(
+            setTrimming({
+              segmentId: newSegments[0].id,
+              trackId: trackId,
+              audioUrl: newSegments[0].audioUrl,
+              name: files[0].name,
+            })
+          );
+        }, 500);
+      }
+    } catch (error) {
+      console.error("Error handling dropped files:", error);
+      toast.error("Failed to process dropped files");
+    } finally {
+      dispatch(setIsLoading(false));
+    }
+  };
+
   const handleSaveTrim = (
     segmentId: string,
     startTime: number,
@@ -441,6 +762,69 @@ export default function AudioEditorPlayground() {
         name: segment.content,
       })
     );
+  };
+
+  const handleMoveSegment = (segmentId: string, newStartTime: number) => {
+    console.log(`Moving segment ${segmentId} to start time: ${newStartTime}`);
+
+    try {
+      // Find the segment we're moving
+      const segment = allSegments.find((s: AudioSegment) => s.id === segmentId);
+      if (!segment) {
+        console.error(`Segment not found: ${segmentId}`);
+        toast.error("Segment not found");
+        return;
+      }
+
+      // Find the track
+      const track = project.tracks.find((track) =>
+        track.segments.some((s) => s.id === segmentId)
+      );
+
+      if (!track) {
+        console.error(`Track not found for segment: ${segmentId}`);
+        toast.error("Track not found for this segment");
+        return;
+      }
+
+      // If the track is locked, prevent movement
+      if (track.locked) {
+        toast.error("Cannot move segment on a locked track");
+        return;
+      }
+
+      // Calculate duration of the segment
+      const segmentDuration = segment.endTime - segment.startTime;
+
+      // Calculate new end time
+      const newEndTime = newStartTime + segmentDuration;
+
+      // Make sure we don't go beyond project boundaries
+      const clampedStartTime = Math.max(0, newStartTime);
+      const clampedEndTime = Math.min(project.duration, newEndTime);
+
+      console.log(
+        `Updating segment timing: start=${clampedStartTime}, end=${clampedEndTime}`
+      );
+
+      // Update the segment timing with the action
+      dispatch(
+        updateSegmentTiming({
+          segmentId,
+          startTime: clampedStartTime,
+          endTime: clampedEndTime,
+        })
+      );
+
+      // Provide feedback
+      toast.success(`Moved segment to ${formatTime(clampedStartTime)}`);
+    } catch (error) {
+      console.error("Error moving segment:", error);
+      toast.error(
+        "Failed to move segment: " +
+          (error instanceof Error ? error.message : String(error))
+      );
+    }
   };
 
   return (
@@ -580,11 +964,12 @@ export default function AudioEditorPlayground() {
                       // Show success message
                       toast.success(`Deleted ${segmentName}`);
                     }}
-                    onMoveSegment={() =>
-                      toast.info("Move segment functionality coming soon")
-                    }
+                    onMoveSegment={handleMoveSegment}
                     onToggleLock={() => dispatch(toggleTrackLock(track.id))}
                     onImportMedia={() => importMediaToTrack(track.id)}
+                    onFileDrop={(files, dropPosition) =>
+                      handleDirectFileDrop(track.id, files, dropPosition)
+                    }
                     formatDuration={formatDuration}
                     onTrimSegment={handleTrimSegment}
                   />
@@ -592,12 +977,20 @@ export default function AudioEditorPlayground() {
               ))}
 
               {/* Add track button */}
-              <div className="text-center py-1">
+              <div className="text-center py-1 flex items-center justify-between">
                 <AddTrackDialog
+                  ref={addTrackDialogRef}
                   onAddTrack={(type, name) => {
                     dispatch(addTrack({ type, name }));
                     toast.success(`Added new ${type} track: ${name}`);
                   }}
+                />
+
+                {/* Keyboard shortcuts dialog */}
+                <ShortcutsDialog
+                  shortcutGroups={shortcutGroups}
+                  open={showShortcutsDialog}
+                  onOpenChange={setShowShortcutsDialog}
                 />
               </div>
             </div>
