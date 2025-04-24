@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -43,6 +43,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AudioSegment, AudioTrack } from "@/types/audio-editor";
+import { useAudioPlayback } from "@/lib/hooks/useAudioPlayback";
 
 // Helper function to format duration
 const formatSegmentDuration = (seconds: number): string => {
@@ -54,26 +56,6 @@ const formatSegmentDuration = (seconds: number): string => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 };
 
-interface AudioSegment {
-  id: string;
-  startTime: number;
-  endTime: number;
-  content: string;
-  audioUrl: string | null;
-  status: "draft" | "generating" | "generated" | "failed";
-}
-
-interface AudioTrack {
-  id: number;
-  type: "emcee" | "background" | "effects";
-  name: string;
-  volume: number;
-  muted: boolean;
-  color: string;
-  locked?: boolean;
-  segments: AudioSegment[];
-}
-
 interface TrackProps {
   track: AudioTrack;
   isSelected: boolean;
@@ -83,13 +65,13 @@ interface TrackProps {
   onVolumeChange: (volume: number) => void;
   onToggleMute: () => void;
   onAddSegment: () => void;
-  onPlaySegment?: (segmentId: string) => void;
-  onDeleteSegment?: (segmentId: string) => void;
-  onMoveSegment?: (segmentId: string, newStartTime: number) => void;
-  onToggleLock?: (trackId: number) => void;
-  onImportMedia?: (trackId: number) => void;
-  onTrimSegment?: (segmentId: string) => void;
-  formatDuration?: (seconds: number) => string;
+  onPlaySegment: (segmentId: string) => void;
+  onDeleteSegment: (segmentId: string) => void;
+  onMoveSegment: (segmentId: string, newTime: number) => void;
+  onToggleLock: () => void;
+  onImportMedia: () => void;
+  formatDuration: (seconds: number) => string;
+  onTrimSegment: (segmentId: string) => void;
 }
 
 export default function Track({
@@ -113,6 +95,21 @@ export default function Track({
   const [isPlaying, setIsPlaying] = useState<Record<string, boolean>>({});
   const trackRef = useRef<HTMLDivElement>(null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+
+  // Get the actual playing segments to sync UI state
+  const { playingSegments } = useAudioPlayback();
+
+  // Sync local playing state with actual audio playback state
+  useEffect(() => {
+    const updatedPlayingState: Record<string, boolean> = {};
+
+    // Update each segment's playing state based on the global playback state
+    track.segments.forEach((segment) => {
+      updatedPlayingState[segment.id] = playingSegments.includes(segment.id);
+    });
+
+    setIsPlaying(updatedPlayingState);
+  }, [playingSegments, track.segments]);
 
   const renderTrackIcon = () => {
     switch (track.type) {
@@ -159,33 +156,16 @@ export default function Track({
   };
 
   const handleSegmentPlay = (segmentId: string) => {
-    if (isPlaying[segmentId]) {
-      // Stop playing
-      setIsPlaying((prev) => ({ ...prev, [segmentId]: false }));
+    if (track.muted) {
+      // If track is muted, unmute it first before playing
+      onToggleMute();
+      // Small delay to let the mute state update before playing
+      setTimeout(() => {
+        onPlaySegment(segmentId);
+      }, 50);
     } else {
-      // Start playing
-      setIsPlaying((prev) => {
-        // Stop all other segments
-        const newState = Object.keys(prev).reduce((acc, key) => {
-          acc[key] = false;
-          return acc;
-        }, {} as Record<string, boolean>);
-
-        // Play this segment
-        newState[segmentId] = true;
-        return newState;
-      });
-
-      onPlaySegment?.(segmentId);
-
-      // Auto-stop after segment duration
-      const segment = track.segments.find((s) => s.id === segmentId);
-      if (segment) {
-        const duration = segment.endTime - segment.startTime;
-        setTimeout(() => {
-          setIsPlaying((prev) => ({ ...prev, [segmentId]: false }));
-        }, duration * 1000);
-      }
+      // Normal behavior - toggle playback
+      onPlaySegment(segmentId);
     }
   };
 
@@ -222,7 +202,7 @@ export default function Track({
                     className="cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onToggleLock?.(track.id);
+                      onToggleLock?.();
                     }}
                   >
                     <Lock className="h-4 w-4 text-muted-foreground" />
@@ -241,7 +221,7 @@ export default function Track({
                     className="cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onToggleLock?.(track.id);
+                      onToggleLock?.();
                     }}
                   >
                     <UnlockIcon className="h-4 w-4 text-muted-foreground" />
@@ -280,7 +260,7 @@ export default function Track({
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
-                  onImportMedia?.(track.id);
+                  onImportMedia?.();
                 }}
               >
                 <Upload className="h-4 w-4 mr-2" />
@@ -311,13 +291,14 @@ export default function Track({
 
         <div className="flex items-center gap-2">
           <Button
-            variant="ghost"
+            variant={track.muted ? "destructive" : "ghost"}
             size="icon"
             className="h-8 w-8"
             onClick={(e) => {
               e.stopPropagation();
               onToggleMute();
             }}
+            title={track.muted ? "Unmute Track" : "Mute Track"}
           >
             {track.muted ? (
               <VolumeX className="h-4 w-4" />
@@ -401,7 +382,7 @@ export default function Track({
                   : segment.status === "failed"
                   ? "bg-red-500/20 hover:bg-red-500/30 border border-red-600/50"
                   : "bg-blue-500/20 hover:bg-blue-500/30 border border-blue-600/50"
-              } cursor-move group`}
+              } ${track.muted ? "opacity-50" : ""} cursor-move group`}
               style={{
                 top: "8px",
                 left: `${segmentLeft}%`,
@@ -431,9 +412,22 @@ export default function Track({
                     <>
                       <Button
                         size="sm"
-                        variant="secondary"
+                        variant={
+                          track.muted
+                            ? "destructive"
+                            : isPlaying[segment.id]
+                            ? "default"
+                            : "secondary"
+                        }
                         className="h-7 w-7 p-0"
                         onClick={() => handleSegmentPlay(segment.id)}
+                        title={
+                          track.muted
+                            ? "Track is muted"
+                            : isPlaying[segment.id]
+                            ? "Pause"
+                            : "Play"
+                        }
                       >
                         {isPlaying[segment.id] ? (
                           <Pause className="h-3 w-3" />
@@ -501,6 +495,13 @@ export default function Track({
                   </span>
                 )}
               </div>
+
+              {/* Add muted indicator for segments in muted tracks */}
+              {track.muted && (
+                <div className="absolute top-1 left-1 text-xs">
+                  <VolumeX className="h-3 w-3 text-red-600" />
+                </div>
+              )}
             </div>
           );
         })}

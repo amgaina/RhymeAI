@@ -1,21 +1,13 @@
 "use client";
 
-import { useRef } from "react";
-
-interface AudioSegment {
-  id: string;
-  startTime: number;
-  endTime: number;
-  content: string;
-  audioUrl: string | null;
-  status: "draft" | "generating" | "generated" | "failed";
-}
+import React, { useRef } from "react";
+import { AudioSegment } from "@/types/audio-editor";
 
 interface TimelineProps {
   duration: number;
   currentTime: number;
-  segments: AudioSegment[];
   zoomLevel: number;
+  segments: AudioSegment[];
   onSeek: (time: number) => void;
   formatTime: (time: number) => string;
 }

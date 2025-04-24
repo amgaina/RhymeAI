@@ -12,35 +12,7 @@ import {
   saveAudioToFilesystem,
   isFilesystemStorageAvailable,
 } from "@/lib/fs-utils";
-
-// Types
-interface AudioSegment {
-  id: string;
-  startTime: number;
-  endTime: number;
-  content: string;
-  audioUrl: string | null;
-  status: "draft" | "generating" | "generated" | "failed";
-}
-
-interface AudioTrack {
-  id: number;
-  type: "emcee" | "background" | "effects";
-  name: string;
-  volume: number;
-  muted: boolean;
-  color: string;
-  segments: AudioSegment[];
-}
-
-interface ProjectData {
-  id: string;
-  name: string;
-  duration: number;
-  tracks: AudioTrack[];
-  currentTime: number;
-  masterVolume: number;
-}
+import { AudioSegment, AudioTrack, ProjectData } from "@/types/audio-editor";
 
 /**
  * Generate audio for a segment of text

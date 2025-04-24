@@ -21,6 +21,10 @@ export function createAudioManager(options: AudioManagerOptions = {}) {
   const lastPlayRequestTime: Record<string, number> = {};
   // Track segments that should be playing at the current time
   const activeSegmentIds = new Set<string>();
+  // Track if we're in solo mode
+  let soloModeActive = false;
+  // Track which segment is in solo mode
+  let soloSegmentId: string | null = null;
 
   return {
     /**
@@ -94,7 +98,7 @@ export function createAudioManager(options: AudioManagerOptions = {}) {
           if (audio && audio.paused) {
             try {
               await audio.play();
-            } catch (e) {
+            } catch (e: any) {
               // Ignore AbortError errors
               if (e.name !== "AbortError") {
                 console.warn("Attempted to resume already playing audio:", e);
@@ -144,6 +148,20 @@ export function createAudioManager(options: AudioManagerOptions = {}) {
         playingIds.add(id);
         activeSegmentIds.add(id);
 
+        // If solo mode is active and this is not the solo segment, don't actually play
+        // BUT only apply this check for individual segment plays, not during global playback
+        // We can detect global playback by checking if multiple segments are active
+        if (
+          soloModeActive &&
+          soloSegmentId !== id &&
+          activeSegmentIds.size <= 1
+        ) {
+          console.log(
+            `Skipping play for ${id} because solo mode is active for ${soloSegmentId}`
+          );
+          return false;
+        }
+
         // Log with precision
         console.log(
           `Playing audio ${id} at position ${audio.currentTime.toFixed(
@@ -153,10 +171,47 @@ export function createAudioManager(options: AudioManagerOptions = {}) {
 
         // Start playback
         try {
-          // Mark as playing first
-          playingIds.add(id);
+          // Check if the audio source is actually set
+          if (!audio.src && url) {
+            console.log(`Setting audio source for ${id} to ${url}`);
+            audio.src = url;
+            await new Promise((resolve) => {
+              audio.onloadedmetadata = resolve;
+              // Add timeout to avoid hanging
+              setTimeout(resolve, 2000);
+            });
+          }
+
+          // Force a load if needed
+          if (audio.readyState < 2) {
+            console.log(`Forcing load for ${id}`);
+            audio.load();
+
+            // Wait for the audio to be loaded enough to play
+            if (audio.readyState < 2) {
+              console.log(`Waiting for audio ${id} to load...`);
+              await new Promise<void>((resolve) => {
+                const loadHandler = () => {
+                  audio.removeEventListener("canplaythrough", loadHandler);
+                  resolve();
+                };
+
+                // Set a timeout to avoid hanging indefinitely
+                setTimeout(() => {
+                  audio.removeEventListener("canplaythrough", loadHandler);
+                  console.log(
+                    `Timeout waiting for audio ${id} to load, continuing anyway`
+                  );
+                  resolve();
+                }, 2000);
+
+                audio.addEventListener("canplaythrough", loadHandler);
+              });
+            }
+          }
 
           // Now call play() which returns a promise in modern browsers
+          console.log(`Calling play() for ${id}`);
           const playPromise = audio.play();
 
           // Store the promise for future reference, but handle browsers that don't return promises
@@ -175,7 +230,7 @@ export function createAudioManager(options: AudioManagerOptions = {}) {
           }
 
           // Only log non-abort errors
-          if (error.name !== "AbortError") {
+          if ((error as any).name !== "AbortError") {
             console.error(`Error playing audio ${id}:`, error);
           }
           return false;
@@ -237,6 +292,10 @@ export function createAudioManager(options: AudioManagerOptions = {}) {
       const ids = Array.from(playingIds);
       activeSegmentIds.clear();
 
+      // Also reset solo mode when stopping all
+      soloModeActive = false;
+      soloSegmentId = null;
+
       await Promise.all(ids.map((id) => this.pause(id)));
     },
 
@@ -265,6 +324,56 @@ export function createAudioManager(options: AudioManagerOptions = {}) {
       } else {
         activeSegmentIds.delete(id);
       }
+    },
+
+    /**
+     * Enable solo mode for a specific segment
+     */
+    setSolo(id: string, solo: boolean): void {
+      if (solo) {
+        soloModeActive = true;
+        soloSegmentId = id;
+
+        // Pause all other playing segments
+        playingIds.forEach((playingId) => {
+          if (playingId !== id) {
+            this.pause(playingId);
+          }
+        });
+      } else {
+        soloModeActive = false;
+        soloSegmentId = null;
+      }
+    },
+
+    /**
+     * Check if solo mode is active
+     */
+    isSoloActive(): boolean {
+      return soloModeActive;
+    },
+
+    /**
+     * Get the current solo segment ID
+     */
+    getSoloSegmentId(): string | null {
+      return soloSegmentId;
+    },
+
+    /**
+     * Get or create the audio element for a segment
+     */
+    getOrCreateAudio(id: string, url: string): HTMLAudioElement {
+      const audioId = `${id}`;
+
+      // Create the audio element if it doesn't exist
+      if (!audioElements[audioId]) {
+        const audio = new Audio(url);
+        audio.preload = "auto";
+        audioElements[audioId] = audio;
+      }
+
+      return audioElements[audioId];
     },
 
     /**

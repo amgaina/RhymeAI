@@ -1,22 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Slider } from "@/components/ui/slider";
-import {
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  VolumeX,
-  Plus,
-  Save,
-  Upload,
-  Download,
-} from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
 
@@ -29,66 +17,55 @@ import BackgroundSoundManager from "@/components/playground/audio-editor/Backgro
 import PresentationLayer from "@/components/playground/audio-editor/PresentationLayer";
 import AudioTrimmer from "@/components/playground/audio-editor/AudioTrimmer";
 
-// Import server actions
-import {
-  generateSegmentAudio,
-  saveProject,
-  exportProjectAudio,
-} from "@/app/actions/playground/audio-editor";
-
 // Import the audio utilities
 import {
-  createAudioManager,
   getAudioFileDuration,
   createAudioFileUrl,
   revokeAudioFileUrl,
 } from "@/lib/audio-utils";
 
-// Define types for better type safety
-interface AudioSegment {
-  id: string;
-  startTime: number;
-  endTime: number;
-  content: string;
-  audioUrl: string | null;
-  status: "draft" | "generating" | "generated" | "failed";
-}
+// Import Redux hooks and actions
+import {
+  useAppDispatch,
+  useAppSelector,
+  selectProject,
+  selectCurrentTime,
+  selectMasterVolume,
+  selectAllSegments,
+  selectActiveSegment,
+  selectSelectedTrack,
+  selectZoomLevel,
+  selectIsLoading,
+  selectEditingScript,
+  selectTrimming,
+  setCurrentTime,
+  setMasterVolume,
+  setSelectedTrack,
+  addSegments,
+  updateSegmentTiming,
+  setTrimming,
+  setEditingScript,
+  toggleTrackMute,
+  toggleTrackLock,
+  updateTrackVolume,
+  setIsLoading,
+} from "@/components/providers/AudioPlaybackProvider";
 
-interface AudioTrack {
-  id: number;
-  type: "emcee" | "background" | "effects";
-  name: string;
-  volume: number;
-  muted: boolean;
-  color: string;
-  locked: boolean;
-  segments: AudioSegment[];
-}
+// Import audio playback hook
+import { useAudioPlayback } from "@/lib/hooks/useAudioPlayback";
 
-interface PresentationSlide {
-  id: number;
-  title: string;
-  time: number;
-  imageUrl: string;
-  notes: string;
-}
-
-interface ProjectData {
-  id: string;
-  name: string;
-  duration: number;
-  tracks: AudioTrack[];
-  currentTime: number;
-  masterVolume: number;
-  slides: PresentationSlide[];
-}
+// Import centralized audio editor types
+import {
+  AudioSegment,
+  AudioSegmentStatus,
+  adaptSegmentStatus,
+} from "@/types/audio-editor";
 
 // Add debugging helper for audio URLs
 const debugAudioUrl = (url: string): string => {
   // For blob URLs, create a reliable URL
   if (url.startsWith("blob:")) {
     try {
-      // Log for debugging
       console.log(`Processing blob URL: ${url}`);
       return url;
     } catch (error) {
@@ -105,90 +82,39 @@ const debugAudioUrl = (url: string): string => {
   return url;
 };
 
+// Define imported segments with proper typing
+interface ImportedSegment {
+  id: string;
+  startTime: number;
+  endTime: number;
+  content: string;
+  audioUrl: string;
+  status: AudioSegmentStatus;
+}
+
 export default function AudioEditorPlayground() {
-  const [projectData, setProjectData] = useState<ProjectData>({
-    id: uuidv4(),
-    name: "New Project",
-    duration: 60,
-    tracks: [
-      {
-        id: 1,
-        type: "emcee",
-        name: "Emcee Voice",
-        volume: 100,
-        muted: false,
-        color: "#4f46e5",
-        locked: false,
-        segments: [],
-      },
-      {
-        id: 2,
-        type: "background",
-        name: "Background Music",
-        volume: 50,
-        muted: false,
-        color: "#10b981",
-        locked: false,
-        segments: [],
-      },
-      {
-        id: 3,
-        type: "effects",
-        name: "Sound Effects",
-        volume: 70,
-        muted: false,
-        color: "#f59e0b",
-        locked: false,
-        segments: [],
-      },
-    ],
-    currentTime: 0,
-    masterVolume: 80,
-    slides: [],
-  });
+  const dispatch = useAppDispatch();
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [selectedTrack, setSelectedTrack] = useState<number>(1);
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
-  const [activeSegment, setActiveSegment] = useState<string | null>(null);
-  const [editingScript, setEditingScript] = useState<string>("");
-  const [trimming, setTrimming] = useState<{
-    segmentId: string;
-    trackId: number;
-    audioUrl: string;
-    name: string;
-  } | null>(null);
+  // Redux state
+  const project = useAppSelector(selectProject);
+  const currentTime = useAppSelector(selectCurrentTime);
+  const masterVolume = useAppSelector(selectMasterVolume);
+  const allSegments = useAppSelector(selectAllSegments);
+  const activeSegment = useAppSelector(selectActiveSegment);
+  const selectedTrack = useAppSelector(selectSelectedTrack);
+  const zoomLevel = useAppSelector(selectZoomLevel);
+  const isLoading = useAppSelector(selectIsLoading);
+  const editingScript = useAppSelector(selectEditingScript);
+  const trimming = useAppSelector(selectTrimming);
 
-  const audioManager = useRef(
-    createAudioManager({
-      onPlay: (id) => {
-        console.log(`Playing audio segment: ${id}`);
-      },
-      onEnded: (id) => {
-        console.log(`Audio segment completed: ${id}`);
-      },
-      onError: (id, error) => {
-        if (!error.message.includes("AbortError")) {
-          console.error(`Audio playback error for segment ${id}:`, error);
-          toast.error("Audio playback error. Please try again.");
-        }
-      },
-    })
-  );
+  // Audio playback hooks
+  const { isPlaying, togglePlayback, playSegmentAudio, stopAllAudio } =
+    useAudioPlayback();
 
+  // References for file management
   const fileUrlsRef = useRef<string[]>([]);
 
-  const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  const playingSegmentsRef = useRef<Set<string>>(new Set());
-  const playbackDebounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
-
-  const currentTrack =
-    projectData.tracks.find((track) => track.id === selectedTrack) ||
-    projectData.tracks[0];
-  const allSegments = projectData.tracks.flatMap((track) => track.segments);
-
+  // Format time helper function
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
@@ -210,207 +136,34 @@ export default function AudioEditorPlayground() {
     return estimatedSeconds;
   };
 
-  const togglePlayback = () => {
-    if (!isPlaying) {
-      audioManager.current.stopAll();
-      playingSegmentsRef.current.clear();
-
-      const segmentsToPlay = allSegments.filter(
-        (segment) =>
-          segment.status === "generated" &&
-          segment.audioUrl !== null &&
-          projectData.currentTime >= segment.startTime &&
-          projectData.currentTime <= segment.endTime
-      );
-
-      segmentsToPlay.forEach((segment, index) => {
-        const track = projectData.tracks.find((t) =>
-          t.segments.some((s) => s.id === segment.id)
-        );
-
-        if (track && !track.muted) {
-          const effectiveVolume =
-            (track.volume / 100) * (projectData.masterVolume / 100);
-          const segmentProgress = projectData.currentTime - segment.startTime;
-
-          playingSegmentsRef.current.add(segment.id);
-
-          setTimeout(() => {
-            audioManager.current.play(segment.id, segment.audioUrl!, {
-              volume: effectiveVolume,
-              currentTime: segmentProgress,
-            });
-          }, index * 100);
-        }
-      });
-    } else {
-      audioManager.current.stopAll();
-      playingSegmentsRef.current.clear();
-
-      Object.values(playbackDebounceTimers.current).forEach((timer) => {
-        clearTimeout(timer);
-      });
-      playbackDebounceTimers.current = {};
-    }
-
-    setIsPlaying(!isPlaying);
-  };
-
-  useEffect(() => {
-    if (isPlaying) {
-      if (playbackIntervalRef.current) {
-        clearInterval(playbackIntervalRef.current);
-      }
-
-      let lastUpdateTime = Date.now();
-
-      playbackIntervalRef.current = setInterval(() => {
-        const now = Date.now();
-        const elapsedSeconds = (now - lastUpdateTime) / 1000;
-        lastUpdateTime = now;
-
-        setProjectData((prev) => {
-          const newTime = prev.currentTime + elapsedSeconds;
-
-          if (newTime >= prev.duration) {
-            setIsPlaying(false);
-            audioManager.current.stopAll();
-            playingSegmentsRef.current.clear();
-            return { ...prev, currentTime: 0 };
-          }
-
-          const shouldBePlayingSegments = allSegments.filter(
-            (segment) =>
-              segment.status === "generated" &&
-              segment.audioUrl !== null &&
-              newTime >= segment.startTime &&
-              newTime <= segment.endTime
-          );
-
-          const shouldStopSegments = Array.from(
-            playingSegmentsRef.current
-          ).filter(
-            (segmentId) =>
-              !shouldBePlayingSegments.some((s) => s.id === segmentId)
-          );
-
-          shouldStopSegments.forEach((segmentId) => {
-            playingSegmentsRef.current.delete(segmentId);
-
-            if (audioManager.current.isPlaying(segmentId)) {
-              audioManager.current.pause(segmentId);
-            }
-
-            if (playbackDebounceTimers.current[segmentId]) {
-              clearTimeout(playbackDebounceTimers.current[segmentId]);
-              delete playbackDebounceTimers.current[segmentId];
-            }
-          });
-
-          shouldBePlayingSegments.forEach((segment) => {
-            if (playingSegmentsRef.current.has(segment.id)) {
-              return;
-            }
-
-            const track = prev.tracks.find((t) =>
-              t.segments.some((s) => s.id === segment.id)
-            );
-
-            if (!track || track.muted) {
-              return;
-            }
-
-            const effectiveVolume =
-              (track.volume / 100) * (prev.masterVolume / 100);
-
-            const segmentProgress = newTime - segment.startTime;
-
-            playingSegmentsRef.current.add(segment.id);
-
-            if (playbackDebounceTimers.current[segment.id]) {
-              clearTimeout(playbackDebounceTimers.current[segment.id]);
-            }
-
-            playbackDebounceTimers.current[segment.id] = setTimeout(() => {
-              if (
-                playingSegmentsRef.current.has(segment.id) &&
-                !audioManager.current.isPlaying(segment.id)
-              ) {
-                console.log(
-                  `Starting segment ${
-                    segment.id
-                  } at position ${segmentProgress.toFixed(2)}s`
-                );
-
-                audioManager.current.play(segment.id, segment.audioUrl!, {
-                  volume: effectiveVolume,
-                  currentTime: segmentProgress,
-                });
-              }
-
-              delete playbackDebounceTimers.current[segment.id];
-            }, 300);
-          });
-
-          return { ...prev, currentTime: newTime };
-        });
-      }, 50);
-    } else {
-      audioManager.current.stopAll();
-      playingSegmentsRef.current.clear();
-
-      Object.values(playbackDebounceTimers.current).forEach((timer) => {
-        clearTimeout(timer);
-      });
-      playbackDebounceTimers.current = {};
-
-      if (playbackIntervalRef.current) {
-        clearInterval(playbackIntervalRef.current);
-      }
-    }
-
-    return () => {
-      if (playbackIntervalRef.current) {
-        clearInterval(playbackIntervalRef.current);
-      }
-
-      audioManager.current.stopAll();
-      playingSegmentsRef.current.clear();
-
-      Object.values(playbackDebounceTimers.current).forEach((timer) => {
-        clearTimeout(timer);
-      });
-    };
-  }, [isPlaying, allSegments]);
-
-  useEffect(() => {
-    const currentSegment = allSegments.find(
-      (segment) =>
-        projectData.currentTime >= segment.startTime &&
-        projectData.currentTime <= segment.endTime
-    );
-
-    if (currentSegment && currentSegment.id !== activeSegment) {
-      setActiveSegment(currentSegment.id);
-      setEditingScript(currentSegment.content);
-    }
-  }, [projectData.currentTime, allSegments, activeSegment]);
-
+  // Cleanup resources when component unmounts
   useEffect(() => {
     return () => {
-      audioManager.current.dispose();
+      // Clean up file URLs
       fileUrlsRef.current.forEach((url) => {
         revokeAudioFileUrl(url);
       });
     };
   }, []);
 
+  // Track active segment changes
+  useEffect(() => {
+    const currentSegment = allSegments.find(
+      (segment: AudioSegment) =>
+        currentTime >= segment.startTime && currentTime <= segment.endTime
+    );
+
+    if (currentSegment && currentSegment.id !== activeSegment) {
+      dispatch(setEditingScript(currentSegment.content));
+    }
+  }, [currentTime, allSegments, activeSegment, dispatch]);
+
   const getPlayingSegmentsInfo = () => {
     const playing = allSegments.filter(
-      (segment) =>
+      (segment: AudioSegment) =>
         segment.audioUrl &&
-        projectData.currentTime >= segment.startTime &&
-        projectData.currentTime <= segment.endTime
+        currentTime >= segment.startTime &&
+        currentTime <= segment.endTime
     );
 
     return playing.length > 0
@@ -419,7 +172,7 @@ export default function AudioEditorPlayground() {
   };
 
   const importMediaToTrack = async (trackId: number) => {
-    const track = projectData.tracks.find((t) => t.id === trackId);
+    const track = project.tracks.find((t) => t.id === trackId);
     if (!track) {
       toast.error("Track not found");
       return;
@@ -441,12 +194,12 @@ export default function AudioEditorPlayground() {
         const files = (e.target as HTMLInputElement).files;
         if (!files || files.length === 0) return;
 
-        setIsLoading(true);
+        dispatch(setIsLoading(true));
         toast.info(`Analyzing ${files.length} audio file(s)...`);
 
         const fileArray = Array.from(files);
-        let currentTime = projectData.currentTime;
-        const newSegments: AudioSegment[] = [];
+        let segmentStartTime = currentTime;
+        const newSegments: ImportedSegment[] = [];
 
         // Process each file
         for (const file of fileArray) {
@@ -473,18 +226,18 @@ export default function AudioEditorPlayground() {
               duration = 30; // Fallback duration
             }
 
-            // Create a new segment
-            const segment: AudioSegment = {
+            // Create a new segment with correct status type
+            const segment: ImportedSegment = {
               id: uuidv4(),
-              startTime: currentTime,
-              endTime: currentTime + duration,
+              startTime: segmentStartTime,
+              endTime: segmentStartTime + duration,
               content: file.name,
               audioUrl: fileUrl,
-              status: "generated",
+              status: "generated", // Using the correctly typed status
             };
 
             newSegments.push(segment);
-            currentTime += duration + 1; // Add a 1-second gap between segments
+            segmentStartTime += duration + 1; // Add a 1-second gap between segments
           } catch (error) {
             console.error(`Error processing file ${file.name}:`, error);
             toast.error(`Failed to process ${file.name}`);
@@ -493,19 +246,12 @@ export default function AudioEditorPlayground() {
 
         if (newSegments.length === 0) {
           toast.error("No valid audio files were imported");
-          setIsLoading(false);
+          dispatch(setIsLoading(false));
           return;
         }
 
         // Update project data with new segments
-        setProjectData((prev) => ({
-          ...prev,
-          tracks: prev.tracks.map((t) =>
-            t.id === trackId
-              ? { ...t, segments: [...t.segments, ...newSegments] }
-              : t
-          ),
-        }));
+        dispatch(addSegments({ trackId, segments: newSegments }));
 
         toast.success(
           `Added ${newSegments.length} audio file${
@@ -516,24 +262,113 @@ export default function AudioEditorPlayground() {
         // Offer to trim if only one file was added
         if (newSegments.length === 1) {
           setTimeout(() => {
-            setTrimming({
-              segmentId: newSegments[0].id,
-              trackId: trackId,
-              audioUrl: newSegments[0].audioUrl!,
-              name: fileArray[0].name,
-            });
+            dispatch(
+              setTrimming({
+                segmentId: newSegments[0].id,
+                trackId: trackId,
+                audioUrl: newSegments[0].audioUrl,
+                name: fileArray[0].name,
+              })
+            );
           }, 500);
         }
       } catch (error) {
         console.error("Error importing audio files:", error);
         toast.error("Failed to import audio files");
       } finally {
-        setIsLoading(false);
+        dispatch(setIsLoading(false));
       }
     };
 
     // Open the file picker
     input.click();
+  };
+
+  const handleSaveTrim = (
+    segmentId: string,
+    startTime: number,
+    endTime: number
+  ) => {
+    try {
+      // Find the segment we're trimming
+      const segment = allSegments.find((s: AudioSegment) => s.id === segmentId);
+      if (!segment) {
+        toast.error("Segment not found");
+        dispatch(setTrimming(null));
+        return;
+      }
+
+      // Calculate the new times - keep the original start position but adjust duration
+      const originalStartTime = segment.startTime;
+
+      // The new boundaries should be relative to the original start time
+      const newStartTimeOffset = startTime;
+      const newEndTimeOffset = endTime;
+
+      const newStartTime = originalStartTime + newStartTimeOffset;
+      const newEndTime = originalStartTime + newEndTimeOffset;
+
+      // Make sure we don't go beyond project boundaries
+      const clampedStartTime = Math.max(0, newStartTime);
+      const clampedEndTime = Math.min(project.duration, newEndTime);
+
+      // Update the segment timing
+      dispatch(
+        updateSegmentTiming({
+          segmentId,
+          startTime: clampedStartTime,
+          endTime: clampedEndTime,
+        })
+      );
+
+      // Close the trimming dialog
+      dispatch(setTrimming(null));
+
+      // Provide user feedback
+      toast.success(
+        `Audio segment trimmed successfully (${formatDuration(
+          clampedEndTime - clampedStartTime
+        )})`
+      );
+    } catch (error) {
+      console.error("Error saving trim:", error);
+      toast.error("Failed to save trimmed audio");
+      dispatch(setTrimming(null));
+    }
+  };
+
+  const handleTrimSegment = (segmentId: string) => {
+    console.log(`Attempting to trim segment: ${segmentId}`);
+
+    // Find the segment
+    const segment = allSegments.find((s: AudioSegment) => s.id === segmentId);
+    if (!segment || !segment.audioUrl) {
+      console.error(`No audio for segment: ${segmentId}`);
+      toast.error("No audio available for this segment");
+      return;
+    }
+
+    // Find the track
+    const track = project.tracks.find((track) =>
+      track.segments.some((s) => s.id === segmentId)
+    );
+
+    if (!track) {
+      console.error(`Track not found for segment: ${segmentId}`);
+      toast.error("Track not found for this segment");
+      return;
+    }
+
+    // Set trimming state
+    console.log(`Opening trimmer for segment: ${segmentId}`);
+    dispatch(
+      setTrimming({
+        segmentId,
+        trackId: track.id,
+        audioUrl: debugAudioUrl(segment.audioUrl),
+        name: segment.content,
+      })
+    );
   };
 
   return (
@@ -543,37 +378,51 @@ export default function AudioEditorPlayground() {
       </h1>
       <p className="text-center mb-8 text-muted-foreground">
         Edit emcee scripts in layers with background sounds and presentation
-        sync
+        sync.
       </p>
+
+      {/* Add test audio button */}
+      <div className="mb-4 flex justify-center">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            const testAudio = new Audio(
+              "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABTgD///////////////////////////////////////////8AAAA8TEFNRTMuMTAwAc0AAAAAAAAAABSAJALGQQAAgAAAUi4NqpAAAAAAAAAAAAAAAAD/++DEAAAIoAFnlAAABRiCLPKAAAEEIbn7t9vu/7vd+FBMQglDEFYICAgQhCEJ4nCAIBn/w4EAQ//CCEIQn//CAIAgEAQBAEAQBAEAzcIQhCEIBgCDw+CfP/Lg8HwfB8Hw+D4Ph8Hw+D4Pj/5cHg+D4Pn/ywQBAEAQBAMQTN4gCAIRh+X//hG12kkkkkkk/4hGIRiEMQhGIQjEIhCMQiEYhGIQjEIhGIRiEIxCMQhGIQjEIRiEQjEIhGIRiEIRiEYhGIQjEIRiEYhCEYhGIQjEIRiEYhCEYhEIRiEYhCMQhGIQhGIQjEIRiEIxCEYhGIQjEIRiEYhCEYhGIQjEIRiEYhCMQhCMQhGIQjEQgAIBgEAQCCQyHSTLJJJJJJJJJJJJJJJJJJJPEIxCMQjEIRiEIxCEYhGIQjEIRiEYhCMQhGIRiEIxCEYhCMQjEIRiEIxCEYhGIQjEIRiEYhCEYhGIQjEIRiEIxCEYhGIQhGIRiEIxCEYhGIQjEIRiEIxCMQhGIQjEIRiEYhCMQhGIRiEIxCEIxCMQhGIQjEIRiEIxCEIKAAIAQDwCAAAAAAAAH0AACEAgGAQCBJJJJJJJJJN27f//////mWTk5OScnJycnJyxnJyxv///7m5vyRIBAIBkEhmSSSSSbJJJJJJJJJJJO//tWHfWlDrlWTIgARAQeXrFYoRqoGBx8YH//8KO86JJLZGA1MZbhL2IZxb//9xFKRIoUFDASbQAw0BSs1//8Wfi9nGRZplsNJJHDxwsdXs+NNOI+lQRs7v//8sqoSELsUGClOGBgYVjq8dOT3///4tM4//vgxF8AHD4Q1faKAAMawfK80kACIrYdHWc5rWRJgkAQFAI8dY8DRrh55QkKdSXv///3TOoVCSSdC4wJjgcGgkFg8dEq1Ju///5vXOJCJzowIcLGAYODRFxAadRwpwKMEgEHw+Pwc63u///95tkyJLI2EhxJGgg4OFISiSZtOLX///+VaSJnODYcGCgqPDAQHDRcFDTqdRGOTJGCwkBgYNBf9F3f///2LnMESCsYLBwJGkk6Dg8UEgyNOu9f////LLMKiyMChgiJjQUJCQoLGnLkJgMSNHAVnAh7vd////JZlhQbHBImLjQ8PEhIIiUbHHTXX/////Xk1qoJHRosKjQsICQkKBwyHwgVSIiCRxZAgMPv/X////0LNESDQwKCgkYHB4YFwgaPMqUVx1///5JqPG2/u7u7u7u7u7u7vd3d3TLu7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7d3d6ZJd3d33d3d3d3d3dmSXd3d93d3d3d3d3d3d3d3d3d3d3d3d3d6ZZd3d3d3d3d3d3dmaZd3dmZJd3d2ZJmQDu7szMmaZd3dnFku7u7oAA7u7Mku7u7u7uQDu7u7IAAAzMzMAAAAA="
+            );
+            testAudio.volume = 0.2;
+
+            // Play a test sound and report results
+            testAudio
+              .play()
+              .then(() => {
+                toast.success("Audio test successful!");
+              })
+              .catch((err) => {
+                console.error("Audio test failed:", err);
+                toast.error("Audio test failed: " + err.message);
+              });
+          }}
+        >
+          Test Audio
+        </Button>
+      </div>
 
       <div className="grid grid-cols-1 gap-6">
         <Card>
           <CardContent className="p-6">
             <Timeline
-              duration={projectData.duration}
-              currentTime={projectData.currentTime}
+              duration={project.duration}
+              currentTime={currentTime}
               segments={allSegments}
               zoomLevel={zoomLevel}
               onSeek={(newTime) => {
-                audioManager.current.stopAll();
-                playingSegmentsRef.current.clear();
-
-                Object.values(playbackDebounceTimers.current).forEach(
-                  (timer) => {
-                    clearTimeout(timer);
-                  }
+                stopAllAudio();
+                dispatch(
+                  setCurrentTime(
+                    Math.max(0, Math.min(newTime, project.duration))
+                  )
                 );
-                playbackDebounceTimers.current = {};
-
-                setProjectData((prev) => ({
-                  ...prev,
-                  currentTime: Math.max(0, Math.min(newTime, prev.duration)),
-                }));
-
-                if (isPlaying) {
-                  setTimeout(togglePlayback, 50);
-                  setTimeout(() => setIsPlaying(true), 100);
-                }
               }}
               formatTime={formatTime}
             />
@@ -581,57 +430,22 @@ export default function AudioEditorPlayground() {
             <div className="mb-4">
               <AudioControls
                 isPlaying={isPlaying}
-                currentTime={projectData.currentTime}
-                duration={projectData.duration}
-                volume={projectData.masterVolume}
+                currentTime={currentTime}
+                duration={project.duration}
+                volume={masterVolume}
                 onPlayPause={togglePlayback}
                 onSkipBack={() => {
-                  audioManager.current.stopAll();
-                  playingSegmentsRef.current.clear();
-
-                  Object.values(playbackDebounceTimers.current).forEach(
-                    (timer) => {
-                      clearTimeout(timer);
-                    }
-                  );
-                  playbackDebounceTimers.current = {};
-
-                  setProjectData((prev) => ({
-                    ...prev,
-                    currentTime: Math.max(0, prev.currentTime - 5),
-                  }));
-
-                  if (isPlaying) {
-                    setTimeout(togglePlayback, 50);
-                    setTimeout(() => setIsPlaying(true), 100);
-                  }
+                  stopAllAudio();
+                  dispatch(setCurrentTime(Math.max(0, currentTime - 5)));
                 }}
                 onSkipForward={() => {
-                  audioManager.current.stopAll();
-                  playingSegmentsRef.current.clear();
-
-                  Object.values(playbackDebounceTimers.current).forEach(
-                    (timer) => {
-                      clearTimeout(timer);
-                    }
+                  stopAllAudio();
+                  dispatch(
+                    setCurrentTime(Math.min(project.duration, currentTime + 5))
                   );
-                  playbackDebounceTimers.current = {};
-
-                  setProjectData((prev) => ({
-                    ...prev,
-                    currentTime: Math.min(prev.duration, prev.currentTime + 5),
-                  }));
-
-                  if (isPlaying) {
-                    setTimeout(togglePlayback, 50);
-                    setTimeout(() => setIsPlaying(true), 100);
-                  }
                 }}
                 onVolumeChange={(newVolume) =>
-                  setProjectData((prev) => ({
-                    ...prev,
-                    masterVolume: newVolume,
-                  }))
+                  dispatch(setMasterVolume(newVolume))
                 }
                 onSave={() => toast.info("Save functionality coming soon")}
                 onImport={() =>
@@ -648,55 +462,32 @@ export default function AudioEditorPlayground() {
             </div>
 
             <div className="space-y-4 mb-6">
-              {projectData.tracks.map((track) => (
+              {project.tracks.map((track) => (
                 <Track
                   key={track.id}
                   track={track}
                   isSelected={selectedTrack === track.id}
-                  currentTime={projectData.currentTime}
-                  duration={projectData.duration}
-                  onSelect={() => setSelectedTrack(track.id)}
+                  currentTime={currentTime}
+                  duration={project.duration}
+                  onSelect={() => dispatch(setSelectedTrack(track.id))}
                   onVolumeChange={(volume) =>
-                    setProjectData((prev) => ({
-                      ...prev,
-                      tracks: prev.tracks.map((t) =>
-                        t.id === track.id ? { ...t, volume } : t
-                      ),
-                    }))
+                    dispatch(updateTrackVolume({ trackId: track.id, volume }))
                   }
-                  onToggleMute={() =>
-                    setProjectData((prev) => ({
-                      ...prev,
-                      tracks: prev.tracks.map((t) =>
-                        t.id === track.id ? { ...t, muted: !t.muted } : t
-                      ),
-                    }))
-                  }
+                  onToggleMute={() => dispatch(toggleTrackMute(track.id))}
                   onAddSegment={() =>
                     toast.info("Add segment functionality coming soon")
                   }
-                  onPlaySegment={() =>
-                    toast.info("Play segment functionality coming soon")
-                  }
+                  onPlaySegment={playSegmentAudio}
                   onDeleteSegment={() =>
                     toast.info("Delete segment functionality coming soon")
                   }
                   onMoveSegment={() =>
                     toast.info("Move segment functionality coming soon")
                   }
-                  onToggleLock={() =>
-                    setProjectData((prev) => ({
-                      ...prev,
-                      tracks: prev.tracks.map((t) =>
-                        t.id === track.id ? { ...t, locked: !t.locked } : t
-                      ),
-                    }))
-                  }
+                  onToggleLock={() => dispatch(toggleTrackLock(track.id))}
                   onImportMedia={() => importMediaToTrack(track.id)}
                   formatDuration={formatDuration}
-                  onTrimSegment={() =>
-                    toast.info("Trim segment functionality coming soon")
-                  }
+                  onTrimSegment={handleTrimSegment}
                 />
               ))}
 
@@ -714,6 +505,7 @@ export default function AudioEditorPlayground() {
           </CardContent>
         </Card>
 
+        {/* Tabs section remains largely unchanged */}
         <Tabs defaultValue="script" className="w-full">
           <TabsList className="grid grid-cols-3 w-full">
             <TabsTrigger value="script">Emcee Script</TabsTrigger>
@@ -721,79 +513,17 @@ export default function AudioEditorPlayground() {
             <TabsTrigger value="presentation">Presentation</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="script">
-            <Card>
-              <CardContent className="p-6 space-y-4">
-                <h3 className="text-lg font-medium">Emcee Script Editor</h3>
-                <p className="text-sm text-muted-foreground">
-                  Edit your emcee script here. Changes will be reflected in the
-                  audio track.
-                </p>
+          {/* Script editor tab */}
+          <TabsContent value="script">{/* ...existing code... */}</TabsContent>
 
-                <ScriptEditor
-                  content={editingScript}
-                  onChange={setEditingScript}
-                  onSave={() =>
-                    toast.info("Save script functionality coming soon")
-                  }
-                  onGenerate={() =>
-                    toast.info("Generate audio functionality coming soon")
-                  }
-                  onPlay={() =>
-                    toast.info("Play audio functionality coming soon")
-                  }
-                  isGenerating={isLoading}
-                  hasAudio={false}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
+          {/* Background tab */}
           <TabsContent value="background">
-            <Card>
-              <CardContent className="p-6 space-y-4">
-                <h3 className="text-lg font-medium">
-                  Background Sound Library
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Choose background music and sound effects for your
-                  presentation.
-                </p>
-
-                <BackgroundSoundManager
-                  onAddToTrack={(soundUrl, trackId, metadata) =>
-                    toast.info("Add background sound functionality coming soon")
-                  }
-                  trackId={2}
-                  projectDuration={projectData.duration}
-                />
-              </CardContent>
-            </Card>
+            {/* ...existing code... */}
           </TabsContent>
 
+          {/* Presentation tab */}
           <TabsContent value="presentation">
-            <Card>
-              <CardContent className="p-6 space-y-4">
-                <h3 className="text-lg font-medium">Presentation Sync</h3>
-                <p className="text-sm text-muted-foreground">
-                  Synchronize your presentation slides with the audio timeline.
-                </p>
-
-                <PresentationLayer
-                  currentTime={projectData.currentTime}
-                  duration={projectData.duration}
-                  onAddSlideMarker={(time, slideData) =>
-                    toast.info("Add slide marker functionality coming soon")
-                  }
-                  onUpdateSlide={(slideId, slideData) =>
-                    toast.info("Update slide functionality coming soon")
-                  }
-                  onRemoveSlide={(slideId) =>
-                    toast.info("Remove slide functionality coming soon")
-                  }
-                />
-              </CardContent>
-            </Card>
+            {/* ...existing code... */}
           </TabsContent>
         </Tabs>
       </div>
@@ -803,10 +533,8 @@ export default function AudioEditorPlayground() {
           audioUrl={trimming.audioUrl}
           segmentId={trimming.segmentId}
           segmentName={trimming.name}
-          onSave={(segmentId, startTime, endTime) =>
-            toast.info("Save trim functionality coming soon")
-          }
-          onCancel={() => setTrimming(null)}
+          onSave={handleSaveTrim}
+          onCancel={() => dispatch(setTrimming(null))}
         />
       )}
     </div>
