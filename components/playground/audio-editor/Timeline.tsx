@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useRef, useCallback } from "react";
 import { AudioSegment } from "@/types/audio-editor";
 
 interface TimelineProps {
@@ -22,17 +22,35 @@ export default function Timeline({
 }: TimelineProps) {
   const timelineRef = useRef<HTMLDivElement>(null);
 
-  // Handle timeline click for seeking
-  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!timelineRef.current) return;
+  // Replace the existing handleTimelineClick function with this improved version:
+  const handleTimelineClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    const rect = timelineRef.current.getBoundingClientRect();
-    const clickPosition = e.clientX - rect.left;
-    const percentage = clickPosition / rect.width;
-    const newTime = percentage * duration;
+      if (!timelineRef.current) return;
 
-    onSeek(newTime);
-  };
+      const rect = timelineRef.current.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+
+      // Ensure click is within the timeline bounds
+      if (offsetX < 0 || offsetX > rect.width) return;
+
+      const clickPosition = offsetX / rect.width;
+      const clampedPosition = Math.max(0, Math.min(clickPosition, 1));
+      const newTime = clampedPosition * duration;
+
+      console.log(
+        `Timeline clicked at position ${clampedPosition.toFixed(
+          2
+        )}, time: ${formatTime(newTime)}`
+      );
+
+      // Call the seek handler immediately
+      onSeek(newTime);
+    },
+    [duration, onSeek, formatTime]
+  );
 
   // Calculate number of time markers based on duration and zoom
   const timeMarkerInterval = 5; // seconds
@@ -41,7 +59,7 @@ export default function Timeline({
   return (
     <div
       ref={timelineRef}
-      className="h-10 bg-muted rounded-md mb-2 relative cursor-pointer overflow-x-auto"
+      className="relative w-full h-12 bg-muted rounded-md cursor-pointer"
       onClick={handleTimelineClick}
     >
       {/* Time markers */}

@@ -218,171 +218,341 @@ export function useAudioPlayback() {
   );
 
   /**
-   * Toggle global playback
+   * Play segments at current position (extracted for reuse)
    */
-  const togglePlayback = useCallback(() => {
-    if (!isPlaying) {
-      console.log("Starting global playback...");
+  const playSegmentsAtCurrentTime = useCallback(() => {
+    // Find all segments that should be playing at the current time
+    const segmentsToPlay = allSegments.filter(
+      (segment) =>
+        segment.status === "generated" &&
+        segment.audioUrl !== null &&
+        currentTime >= segment.startTime &&
+        currentTime <= segment.endTime
+    );
 
-      // Warn if audio not initialized
-      if (!audioInitialized) {
-        toast.warning(
-          "Audio playback may not work until you interact with the page. Please click anywhere and try again."
-        );
-      }
+    console.log(
+      `Found ${segmentsToPlay.length} segments to play at time ${currentTime}`
+    );
 
-      // Stop any currently playing audio first
-      if (audioManager) {
-        audioManager.stopAll();
-      }
-
-      // Also stop any direct audio elements
-      audioRegistry.stopAll();
-      dispatch(clearPlayingSegments());
-
-      // Find all segments that should be playing at the current time
-      const segmentsToPlay = allSegments.filter(
-        (segment: AudioSegment) =>
-          segment.status === "generated" &&
-          segment.audioUrl !== null &&
-          currentTime >= segment.startTime &&
-          currentTime <= segment.endTime
-      );
-
-      console.log(
-        `Found ${segmentsToPlay.length} segments to play at time ${currentTime}`
-      );
-
-      if (segmentsToPlay.length === 0) {
-        console.log("No segments to play at current time");
-        dispatch(setPlaying(true));
-        return;
-      }
-
-      // Preload all segments before playing
-      const preloadPromises = segmentsToPlay.map((segment: AudioSegment) => {
-        return new Promise<HTMLAudioElement | null>((resolve) => {
-          if (!segment.audioUrl) {
-            resolve(null);
-            return;
-          }
-
-          // Create or get audio element
-          const audioId = `direct-${segment.id}`;
-          const audio = getAudioElement(audioId, segment.audioUrl);
-
-          // Force preload
-          audio.preload = "auto";
-
-          // Set up event for preload completion
-          const handleCanPlay = () => {
-            audio.removeEventListener("canplaythrough", handleCanPlay);
-            resolve(audio);
-          };
-
-          // If already loaded, resolve immediately
-          if (audio.readyState >= 3) {
-            resolve(audio);
-          } else {
-            // Otherwise wait for canplaythrough event
-            audio.addEventListener("canplaythrough", handleCanPlay);
-
-            // Set a timeout to avoid hanging
-            setTimeout(() => {
-              audio.removeEventListener("canplaythrough", handleCanPlay);
-              resolve(audio); // Resolve anyway after timeout
-            }, 2000);
-          }
-
-          // Start loading the audio
-          try {
-            audio.load();
-          } catch (e) {
-            console.error(`Error loading audio for segment ${segment.id}:`, e);
-            resolve(null);
-          }
-        });
-      });
-
-      // Wait for all segments to be preloaded
-      Promise.all(preloadPromises).then(() => {
-        // Play each segment with staggered start
-        segmentsToPlay.forEach((segment: AudioSegment, index: number) => {
-          const track = tracks.find((t: AudioTrack) =>
-            t.segments.some((s) => s.id === segment.id)
-          );
-
-          if (!track || track.muted || !segment.audioUrl) {
-            return;
-          }
-
-          const effectiveVolume = (track.volume / 100) * (masterVolume / 100);
-          const segmentProgress = currentTime - segment.startTime;
-
-          // Add to playing set
-          dispatch(addPlayingSegment(segment.id));
-
-          // Get the audio element
-          const audioId = `direct-${segment.id}`;
-          const audio = audioRegistry.get(audioId);
-
-          if (!audio) {
-            console.error(`Missing audio element for segment ${segment.id}`);
-            return;
-          }
-
-          // Configure the audio element
-          audio.volume = effectiveVolume;
-          audio.currentTime = segmentProgress;
-
-          // Stagger playback slightly to avoid audio engine overload
-          setTimeout(() => {
-            try {
-              const playPromise = audio.play();
-              if (playPromise !== undefined) {
-                playPromise.catch((err) => {
-                  console.error(
-                    `Direct playback failed for segment ${segment.id}:`,
-                    err
-                  );
-                  dispatch(removePlayingSegment(segment.id));
-
-                  // Show error to user if it's the first segment that failed
-                  if (index === 0) {
-                    toast.error(
-                      "Failed to play audio. Your browser may be blocking autoplay. Please click on the page and try again."
-                    );
-                  }
-                });
-              }
-            } catch (err) {
-              console.error(
-                `Error in direct play for segment ${segment.id}:`,
-                err
-              );
-              dispatch(removePlayingSegment(segment.id));
-            }
-          }, index * 100);
-        });
-      });
-    } else {
-      // Stop all playback
-      stopAllAudio();
+    if (segmentsToPlay.length === 0) {
+      return;
     }
 
-    // Toggle playing state
-    dispatch(setPlaying(!isPlaying));
+    // Preload and play segments
+    const preloadPromises = segmentsToPlay.map((segment) => {
+      return new Promise<HTMLAudioElement | null>((resolve) => {
+        if (!segment.audioUrl) {
+          resolve(null);
+          return;
+        }
+
+        // Create or get audio element
+        const audioId = `direct-${segment.id}`;
+        const audio = getAudioElement(audioId, segment.audioUrl);
+
+        // Force preload
+        audio.preload = "auto";
+
+        // Set up event for preload completion
+        const handleCanPlay = () => {
+          audio.removeEventListener("canplaythrough", handleCanPlay);
+          resolve(audio);
+        };
+
+        // If already loaded, resolve immediately
+        if (audio.readyState >= 3) {
+          resolve(audio);
+        } else {
+          // Otherwise wait for canplaythrough event
+          audio.addEventListener("canplaythrough", handleCanPlay);
+
+          // Set a timeout to avoid hanging
+          setTimeout(() => {
+            audio.removeEventListener("canplaythrough", handleCanPlay);
+            resolve(audio); // Resolve anyway after timeout
+          }, 2000);
+        }
+
+        // Start loading the audio
+        try {
+          audio.load();
+        } catch (e) {
+          console.error(`Error loading audio for segment ${segment.id}:`, e);
+          resolve(null);
+        }
+      });
+    });
+
+    // Wait for all segments to be preloaded
+    Promise.all(preloadPromises).then((audios) => {
+      // Play each segment with appropriate settings
+      segmentsToPlay.forEach((segment, index) => {
+        const track = tracks.find((t) =>
+          t.segments.some((s) => s.id === segment.id)
+        );
+
+        if (!track || track.muted || !segment.audioUrl) {
+          return;
+        }
+
+        const effectiveVolume = (track.volume / 100) * (masterVolume / 100);
+        const segmentProgress = currentTime - segment.startTime;
+
+        // Add to playing set
+        dispatch(addPlayingSegment(segment.id));
+
+        // Get the audio element
+        const audioId = `direct-${segment.id}`;
+        const audio = audioRegistry.get(audioId);
+
+        if (!audio) {
+          console.error(`Missing audio element for segment ${segment.id}`);
+          return;
+        }
+
+        // Configure the audio element
+        audio.volume = effectiveVolume;
+        audio.currentTime = segmentProgress;
+
+        // Play with slight staggering
+        setTimeout(() => {
+          try {
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+              playPromise.catch((err) => {
+                console.error(
+                  `Playback failed for segment ${segment.id}:`,
+                  err
+                );
+                dispatch(removePlayingSegment(segment.id));
+              });
+            }
+          } catch (err) {
+            console.error(`Error playing segment ${segment.id}:`, err);
+            dispatch(removePlayingSegment(segment.id));
+          }
+        }, index * 100);
+      });
+    });
   }, [
-    isPlaying,
-    audioManager,
-    audioElementIds,
+    currentTime,
     allSegments,
     tracks,
     masterVolume,
-    audioInitialized,
-    currentTime,
-    getAudioElement,
     dispatch,
+    getAudioElement,
+  ]);
+
+  /**
+   * Play a specific segment from a given starting position
+   */
+  const playSegmentFromPosition = useCallback(
+    (segmentId: string, startPosition: number) => {
+      console.log(
+        `Playing segment ${segmentId} from position ${startPosition}`
+      );
+
+      // Find the segment
+      const segment = allSegments.find((s) => s.id === segmentId);
+      if (!segment || !segment.audioUrl) {
+        console.error(`No segment or audio URL found for segment ${segmentId}`);
+        return false;
+      }
+
+      // Find track for volume settings
+      const track = tracks.find((t) =>
+        t.segments.some((s) => s.id === segmentId)
+      );
+      if (!track) {
+        console.error(`No track found for segment ${segmentId}`);
+        return false;
+      }
+
+      // If track is muted, don't play
+      if (track.muted) {
+        console.log(
+          `Track ${track.id} is muted, not playing segment ${segmentId}`
+        );
+        return false;
+      }
+
+      // Get the audio element
+      const audioId = `direct-${segmentId}`;
+      const audio = getAudioElement(audioId, segment.audioUrl);
+
+      // Calculate effective volume
+      const effectiveVolume = (track.volume / 100) * (masterVolume / 100);
+
+      // Calculate where in the segment to start (relative to segment start)
+      const segmentProgress = startPosition - segment.startTime;
+
+      // Add to playing set
+      dispatch(addPlayingSegment(segmentId));
+
+      // Configure audio element
+      audio.volume = effectiveVolume;
+      audio.currentTime = Math.max(0, segmentProgress);
+
+      // Play with error handling
+      try {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.error(`Playback failed for segment ${segmentId}:`, err);
+            dispatch(removePlayingSegment(segmentId));
+
+            if (err.name === "NotAllowedError") {
+              toast.error(
+                "Browser blocked audio playback. Please click on the page first."
+              );
+            }
+          });
+        }
+        return true;
+      } catch (err) {
+        console.error(`Error playing segment ${segmentId}:`, err);
+        dispatch(removePlayingSegment(segmentId));
+        return false;
+      }
+    },
+    [allSegments, tracks, masterVolume, dispatch, getAudioElement]
+  );
+
+  /**
+   * Toggle global playback - refactored to use the extracted function
+   */
+  const togglePlayback = useCallback(() => {
+    if (isPlaying) {
+      console.log("Stopping playback");
+
+      // Stop all audio playback and clear state
+      stopAllAudio();
+      dispatch(setPlaying(false));
+      return;
+    }
+
+    console.log("Starting playback at time:", currentTime);
+
+    // Find segments that should be playing at current time
+    const segmentsToPlay = allSegments.filter(
+      (segment) =>
+        segment.audioUrl &&
+        segment.status === "generated" &&
+        currentTime >= segment.startTime &&
+        currentTime <= segment.endTime
+    );
+
+    console.log(
+      `Found ${segmentsToPlay.length} segments to play at time ${currentTime}`
+    );
+
+    // For tracking if we actually played anything
+    let anySegmentPlayed = false;
+
+    // If we have segments to play, set up each one with proper delay
+    if (segmentsToPlay.length > 0) {
+      // Use a counter to track how many segments we've processed for better error logging
+      let processedCount = 0;
+
+      segmentsToPlay.forEach((segment, index) => {
+        const track = tracks.find((t) =>
+          t.segments.some((s) => s.id === segment.id)
+        );
+
+        if (!track || track.muted || !segment.audioUrl) {
+          processedCount++;
+          return;
+        }
+
+        try {
+          const audioId = `direct-${segment.id}`;
+          const audio = getAudioElement(audioId, segment.audioUrl);
+
+          // Calculate volume and position
+          const effectiveVolume = (track.volume / 100) * (masterVolume / 100);
+          const segmentProgress = Math.max(0, currentTime - segment.startTime);
+
+          // Set up audio
+          audio.volume = effectiveVolume;
+          audio.currentTime = segmentProgress;
+
+          // Track in redux
+          dispatch(addPlayingSegment(segment.id));
+
+          // Play with increased reliability
+          setTimeout(() => {
+            console.log(
+              `Playing segment ${
+                segment.id
+              } at offset ${segmentProgress.toFixed(2)}s`
+            );
+            try {
+              // Try to force audio context resume first (if applicable)
+              if (audio.context && audio.context.state === "suspended") {
+                audio.context
+                  .resume()
+                  .catch((e) =>
+                    console.warn("Could not resume audio context:", e)
+                  );
+              }
+
+              const playPromise = audio.play();
+              if (playPromise !== undefined) {
+                playPromise
+                  .then(() => {
+                    anySegmentPlayed = true;
+                    processedCount++;
+                    console.log(
+                      `Successfully started playback for segment ${segment.id}`
+                    );
+                  })
+                  .catch((err) => {
+                    console.error(`Error playing segment ${segment.id}:`, err);
+                    dispatch(removePlayingSegment(segment.id));
+                    processedCount++;
+                  });
+              } else {
+                anySegmentPlayed = true;
+                processedCount++;
+              }
+            } catch (err) {
+              console.error(
+                `Error in play attempt for segment ${segment.id}:`,
+                err
+              );
+              dispatch(removePlayingSegment(segment.id));
+              processedCount++;
+            }
+          }, index * 50); // Stagger starts to avoid audio conflicts
+        } catch (err) {
+          console.error(`Error setting up segment ${segment.id}:`, err);
+          processedCount++;
+        }
+      });
+
+      // Check if we actually managed to play anything
+      setTimeout(() => {
+        if (!anySegmentPlayed && processedCount === segmentsToPlay.length) {
+          console.warn(
+            "Failed to play any segments despite finding matching segments"
+          );
+          toast.warning(
+            "Audio playback issue - try clicking anywhere and retry"
+          );
+        }
+      }, segmentsToPlay.length * 50 + 100);
+    }
+
+    // Always set global state to playing
+    dispatch(setPlaying(true));
+  }, [
+    isPlaying,
+    currentTime,
+    allSegments,
+    tracks,
+    masterVolume,
+    dispatch,
+    getAudioElement,
     stopAllAudio,
   ]);
 
@@ -435,6 +605,8 @@ export function useAudioPlayback() {
     togglePlayback,
     playSegmentAudio,
     stopAllAudio,
+    playSegmentFromPosition,
+    playSegmentsAtCurrentTime, // Export this function for seeking operations
     cleanupAudio,
     getAudioElement,
     playingSegments,

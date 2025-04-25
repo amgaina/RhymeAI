@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -61,6 +61,7 @@ import {
   deleteSegment,
   setZoomLevel,
   setMasterVolume,
+  setPlaying,
 } from "@/components/providers/AudioPlaybackProvider";
 
 // Import audio playback hook
@@ -355,6 +356,83 @@ export default function AudioEditorPlayground() {
     const estimatedSeconds = Math.max(3, Math.ceil(words / 2.5));
     return estimatedSeconds;
   };
+
+  // Improved seek handler to maintain playback state
+  const handleSeek = useCallback(
+    (newTime: number) => {
+      // Track current playback state
+      const wasPlaying = isPlaying;
+
+      console.log(
+        `Timeline seek to ${formatTime(newTime)}, wasPlaying: ${wasPlaying}`
+      );
+
+      // First stop any current audio playback
+      stopAllAudio();
+
+      // Update the timeline position
+      dispatch(
+        setCurrentTime(Math.max(0, Math.min(newTime, project.duration)))
+      );
+
+      // If we were playing before, we need to restart playback
+      if (wasPlaying) {
+        // Temporarily set isPlaying to false to ensure proper state transition
+        dispatch(setPlaying(false));
+
+        // Use a timer to restart playback after a short delay
+        setTimeout(() => {
+          console.log(`Forcing playback restart at ${formatTime(newTime)}`);
+
+          // Find segments that should be playing at new position
+          const segmentsAtPosition = allSegments.filter(
+            (segment: AudioSegment) =>
+              segment.audioUrl &&
+              newTime >= segment.startTime &&
+              newTime <= segment.endTime
+          );
+
+          console.log(
+            `Found ${segmentsAtPosition.length} segments at seek position`
+          );
+
+          // Play each relevant segment directly
+          let anyPlayed = false;
+          segmentsAtPosition.forEach((segment) => {
+            const track = project.tracks.find((t) =>
+              t.segments.some((s) => s.id === segment.id)
+            );
+
+            if (track && !track.muted && segment.audioUrl) {
+              console.log(`Playing segment ${segment.id} after seek`);
+              playSegmentAudio(segment.id);
+              anyPlayed = true;
+            }
+          });
+
+          // Set global playing state to true regardless
+          dispatch(setPlaying(true));
+
+          // If no segments were played, show a message
+          if (segmentsAtPosition.length === 0) {
+            console.log("No segments to play at current position");
+          } else if (!anyPlayed) {
+            console.log("No segments could be played (may be muted)");
+          }
+        }, 250); // Increased from 200ms to 250ms for better reliability
+      }
+    },
+    [
+      isPlaying,
+      project.duration,
+      project.tracks,
+      allSegments,
+      dispatch,
+      stopAllAudio,
+      playSegmentAudio,
+      formatTime,
+    ]
+  );
 
   // Initialize audio context on user interaction
   useEffect(() => {
@@ -856,14 +934,7 @@ export default function AudioEditorPlayground() {
               currentTime={currentTime}
               segments={allSegments}
               zoomLevel={zoomLevel}
-              onSeek={(newTime) => {
-                stopAllAudio();
-                dispatch(
-                  setCurrentTime(
-                    Math.max(0, Math.min(newTime, project.duration))
-                  )
-                );
-              }}
+              onSeek={handleSeek}
               formatTime={formatTime}
             />
           </div>
