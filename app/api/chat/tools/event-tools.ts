@@ -145,7 +145,7 @@ export const storeEventDataTool = tool({
  */
 export const generateEventLayoutTool = tool({
   description:
-    "Generate a rough event layout with timing suggestions based on event type",
+    "Generate an AI-powered event layout with timing suggestions based on event details",
   parameters: z.object({
     eventId: z.string(),
     eventType: z.string().optional(),
@@ -163,6 +163,7 @@ export const generateEventLayoutTool = tool({
           success: true,
           layout: result.layout,
           message: result.message || "Event layout generated successfully",
+          isAIGenerated: result.aiContext ? true : false,
         };
       } else {
         return {

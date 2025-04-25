@@ -59,6 +59,14 @@ export default function EventCreationFlow() {
     setEventData(data);
     setProgress(25);
 
+    // If we already have an eventId, we're updating an existing event
+    // This happens when going back from layout to details
+    if (eventId) {
+      // We'll handle the update in the EventDetailsStep component
+      // Don't automatically move to the next step - let the user decide
+      return;
+    }
+
     // Create FormData object for the server action
     const formData = new FormData();
     formData.append("eventName", data.eventName || "");
@@ -114,15 +122,11 @@ export default function EventCreationFlow() {
         setEventId(newEventId);
         toast({
           title: "Event created successfully!",
-          description: "Now let's create a layout for your event.",
+          description: "You can now proceed to create a layout for your event.",
         });
 
-        // Move to the next step
-        setCurrentStep("event_layout");
-
-        // Generate layout automatically using the event ID directly
-        // This ensures we don't depend on the state update
-        generateLayout(newEventId.toString());
+        // Don't automatically move to the next step or generate layout
+        // Let the user decide when to proceed
       } else {
         toast({
           title: "Error creating event",
@@ -479,16 +483,32 @@ export default function EventCreationFlow() {
     }
   };
 
+  // Function to navigate to any step
+  const navigateToStep = (step: FlowStep) => {
+    setCurrentStep(step);
+
+    // If navigating back to event details, set edit mode
+    if (step === "event_details" && eventId) {
+      // We're going back to edit an existing event
+      console.log("Navigating back to edit event details");
+
+      // Reset any state in the EventDetailsStep component
+      // This will be handled by the component itself
+    }
+  };
+
   // Render the current step
   const renderCurrentStep = () => {
     switch (currentStep) {
       case "event_details":
         return (
           <EventDetailsStep
+            eventId={eventId}
             eventData={eventData}
             isLoading={isLoading}
             onEventDataCollected={handleEventDataCollected}
-            onContinue={() => setCurrentStep("event_layout")}
+            onContinue={() => navigateToStep("event_layout")}
+            isEditMode={!!eventId} // Set edit mode if we have an eventId (coming back from layout)
           />
         );
 
@@ -504,13 +524,15 @@ export default function EventCreationFlow() {
             onAddSegment={handleAddLayoutSegment}
             onDeleteSegment={handleDeleteLayoutSegment}
             onGenerateScript={handleGenerateScript}
-            onBack={() => setCurrentStep("event_details")}
+            onBack={() => navigateToStep("event_details")}
+            onGoToDetails={() => navigateToStep("event_details")}
           />
         );
 
       case "script_generation":
         return (
           <ScriptGenerationStep
+            eventId={eventId}
             scriptSegments={scriptSegments}
             selectedSegment={selectedSegment}
             isGeneratingScript={isGeneratingScript}
@@ -518,20 +540,23 @@ export default function EventCreationFlow() {
             onGenerateAudio={handleGenerateAudio}
             onPlayAudio={handlePlayAudio}
             onGenerateScript={handleGenerateScript}
-            onBack={() => setCurrentStep("event_layout")}
-            onContinue={() => setCurrentStep("finalize")}
+            onBack={() => navigateToStep("event_layout")}
+            onGoToDetails={() => navigateToStep("event_details")}
+            onContinue={() => navigateToStep("finalize")}
           />
         );
 
       case "finalize":
         return (
           <FinalizeEventStep
+            eventId={eventId}
             eventData={eventData}
             eventLayout={eventLayout}
             scriptSegments={scriptSegments}
             isLoading={isLoading}
             onFinalizeEvent={handleFinalizeEvent}
-            onBack={() => setCurrentStep("script_generation")}
+            onBack={() => navigateToStep("script_generation")}
+            onGoToDetails={() => navigateToStep("event_details")}
           />
         );
 
@@ -552,89 +577,141 @@ export default function EventCreationFlow() {
 
       {/* Step indicators */}
       <div className="flex justify-between text-sm">
-        <div
+        <button
+          onClick={() => eventId && navigateToStep("event_details")}
           className={`flex flex-col items-center ${
             currentStep === "event_details"
               ? "text-primary font-medium"
+              : eventId
+              ? "text-muted-foreground hover:text-primary cursor-pointer"
               : "text-muted-foreground"
           }`}
+          disabled={!eventId}
+          title={
+            eventId ? "Go back to event details" : "Complete this step first"
+          }
         >
           <div
             className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${
               currentStep === "event_details"
                 ? "bg-primary text-white"
                 : progress >= 25
-                ? "bg-primary/20 text-primary"
+                ? eventId
+                  ? "bg-primary/20 text-primary hover:bg-primary/30"
+                  : "bg-primary/20 text-primary"
                 : "bg-muted text-muted-foreground"
             }`}
           >
             1
           </div>
           <span>Details</span>
-        </div>
+        </button>
 
-        <div
+        <button
+          onClick={() => eventId && navigateToStep("event_layout")}
           className={`flex flex-col items-center ${
             currentStep === "event_layout"
               ? "text-primary font-medium"
+              : eventId && progress >= 25
+              ? "text-muted-foreground hover:text-primary cursor-pointer"
               : "text-muted-foreground"
           }`}
+          disabled={!eventId || progress < 25}
+          title={
+            !eventId
+              ? "Complete previous step first"
+              : progress < 25
+              ? "Complete previous step first"
+              : "Go to layout step"
+          }
         >
           <div
             className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${
               currentStep === "event_layout"
                 ? "bg-primary text-white"
                 : progress >= 50
-                ? "bg-primary/20 text-primary"
+                ? eventId
+                  ? "bg-primary/20 text-primary hover:bg-primary/30"
+                  : "bg-primary/20 text-primary"
                 : "bg-muted text-muted-foreground"
             }`}
           >
             2
           </div>
           <span>Layout</span>
-        </div>
+        </button>
 
-        <div
+        <button
+          onClick={() =>
+            eventId && progress >= 50 && navigateToStep("script_generation")
+          }
           className={`flex flex-col items-center ${
             currentStep === "script_generation"
               ? "text-primary font-medium"
+              : eventId && progress >= 50
+              ? "text-muted-foreground hover:text-primary cursor-pointer"
               : "text-muted-foreground"
           }`}
+          disabled={!eventId || progress < 50}
+          title={
+            !eventId
+              ? "Complete previous steps first"
+              : progress < 50
+              ? "Complete previous steps first"
+              : "Go to script step"
+          }
         >
           <div
             className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${
               currentStep === "script_generation"
                 ? "bg-primary text-white"
                 : progress >= 75
-                ? "bg-primary/20 text-primary"
+                ? eventId
+                  ? "bg-primary/20 text-primary hover:bg-primary/30"
+                  : "bg-primary/20 text-primary"
                 : "bg-muted text-muted-foreground"
             }`}
           >
             3
           </div>
           <span>Script</span>
-        </div>
+        </button>
 
-        <div
+        <button
+          onClick={() =>
+            eventId && progress >= 75 && navigateToStep("finalize")
+          }
           className={`flex flex-col items-center ${
             currentStep === "finalize"
               ? "text-primary font-medium"
+              : eventId && progress >= 75
+              ? "text-muted-foreground hover:text-primary cursor-pointer"
               : "text-muted-foreground"
           }`}
+          disabled={!eventId || progress < 75}
+          title={
+            !eventId
+              ? "Complete previous steps first"
+              : progress < 75
+              ? "Complete previous steps first"
+              : "Go to finalize step"
+          }
         >
           <div
             className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${
               currentStep === "finalize"
                 ? "bg-primary text-white"
                 : progress >= 90
-                ? "bg-primary/20 text-primary"
+                ? eventId
+                  ? "bg-primary/20 text-primary hover:bg-primary/30"
+                  : "bg-primary/20 text-primary"
                 : "bg-muted text-muted-foreground"
             }`}
           >
             4
           </div>
           <span>Finalize</span>
-        </div>
+        </button>
       </div>
 
       {/* Current step content */}

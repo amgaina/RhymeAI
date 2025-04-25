@@ -5,6 +5,7 @@ import AudioPreview from "@/components/AudioPreview";
 import { ScriptSegment } from "@/types/event";
 
 interface ScriptGenerationStepProps {
+  eventId?: number | null; // Optional for backward compatibility
   scriptSegments: ScriptSegment[];
   selectedSegment: ScriptSegment | null;
   isGeneratingScript: boolean;
@@ -13,10 +14,12 @@ interface ScriptGenerationStepProps {
   onPlayAudio: (audioUrl: string) => void;
   onGenerateScript: () => void;
   onBack: () => void;
+  onGoToDetails?: () => void; // Optional for backward compatibility
   onContinue: () => void;
 }
 
 export function ScriptGenerationStep({
+  eventId,
   scriptSegments,
   selectedSegment,
   isGeneratingScript,
@@ -25,6 +28,7 @@ export function ScriptGenerationStep({
   onPlayAudio,
   onGenerateScript,
   onBack,
+  onGoToDetails,
   onContinue,
 }: ScriptGenerationStepProps) {
   return (
@@ -48,11 +52,35 @@ export function ScriptGenerationStep({
             />
           )}
 
-          <div className="flex justify-between">
-            <Button variant="outline" onClick={onBack}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Layout
-            </Button>
+          <div className="flex justify-between items-center">
+            <div className="flex space-x-2">
+              <Button variant="outline" onClick={onBack}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Layout
+              </Button>
+
+              {onGoToDetails && (
+                <Button
+                  variant="ghost"
+                  onClick={onGoToDetails}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <svg
+                    className="mr-2 h-4 w-4"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" />
+                  </svg>
+                  Back to Details
+                </Button>
+              )}
+            </div>
 
             <Button
               onClick={onContinue}

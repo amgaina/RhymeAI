@@ -4,21 +4,25 @@ import { EventLayout } from "@/types/layout";
 import { ScriptSegment } from "@/types/event";
 
 interface FinalizeEventStepProps {
+  eventId?: number | null; // Optional for backward compatibility
   eventData: Record<string, any> | null;
   eventLayout: EventLayout | null;
   scriptSegments: ScriptSegment[];
   isLoading: boolean;
   onFinalizeEvent: () => void;
   onBack: () => void;
+  onGoToDetails?: () => void; // Optional for backward compatibility
 }
 
 export function FinalizeEventStep({
+  eventId,
   eventData,
   eventLayout,
   scriptSegments,
   isLoading,
   onFinalizeEvent,
   onBack,
+  onGoToDetails,
 }: FinalizeEventStepProps) {
   return (
     <div className="space-y-6">
@@ -57,10 +61,34 @@ export function FinalizeEventStep({
         </div>
 
         <div className="flex justify-between mt-6">
-          <Button variant="outline" onClick={onBack}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Script
-          </Button>
+          <div className="flex space-x-2">
+            <Button variant="outline" onClick={onBack}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Script
+            </Button>
+
+            {onGoToDetails && (
+              <Button
+                variant="ghost"
+                onClick={onGoToDetails}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <svg
+                  className="mr-2 h-4 w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" />
+                </svg>
+                Back to Details
+              </Button>
+            )}
+          </div>
 
           <Button
             onClick={onFinalizeEvent}

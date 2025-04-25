@@ -1,7 +1,8 @@
 "use server";
 
 // Export layout operations from their respective modules
-export { generateEventLayout } from "./generator";
+export { generateEventLayout } from "../layout"; // Export from parent file
+export { generateAIEventLayout } from "./ai-generator"; // Export AI-based generator
 export {
   updateEventLayoutSegment,
   addLayoutSegment,
