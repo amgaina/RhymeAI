@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import ErrorBoundary from "./ErrorBoundary";
 
@@ -25,6 +25,7 @@ interface SafeAIChatProps {
   initialMessage: string;
   placeholder: string;
   eventContext: any;
+  eventId?: number; // Add eventId prop to associate chat with an event
   onEventDataCollected: (data: Record<string, string>) => void;
 }
 
@@ -35,6 +36,7 @@ export default function SafeAIChat({
   initialMessage,
   placeholder,
   eventContext,
+  eventId,
   onEventDataCollected,
 }: SafeAIChatProps) {
   const [chatData, setChatData] = useState<Record<string, string> | null>(null);
@@ -42,26 +44,42 @@ export default function SafeAIChat({
   useEffect(() => {
     // Forward collected data to parent when available
     if (chatData) {
-      onEventDataCollected(chatData);
+      // If we have an eventId from the component props, make sure it's included in the data
+      if (eventId && !chatData.eventId) {
+        const updatedData = { ...chatData, eventId: String(eventId) };
+        onEventDataCollected(updatedData);
+      } else {
+        onEventDataCollected(chatData);
+      }
+
+      // Clear the chat data after forwarding it to prevent multiple calls
+      setChatData(null);
     }
-  }, [chatData, onEventDataCollected]);
+  }, [chatData, onEventDataCollected, eventId]);
 
   // Safe handler that ensures we're returning proper data
-  const handleDataCollection = (data: any) => {
-    if (!data || typeof data !== "object") {
-      console.error("Invalid data received:", data);
-      return;
-    }
+  const handleDataCollection = useCallback(
+    (data: any) => {
+      if (!data || typeof data !== "object") {
+        console.error("Invalid data received:", data);
+        return;
+      }
 
-    // Convert all values to strings to ensure safety
-    const safeData: Record<string, string> = {};
-    Object.entries(data).forEach(([key, value]) => {
-      safeData[key] = String(value);
-    });
+      // If we have an eventId from the component props, make sure it's included in the data
+      const dataWithEventId =
+        eventId && !data.eventId ? { ...data, eventId } : data;
 
-    // Set local state
-    setChatData(safeData);
-  };
+      // Convert all values to strings to ensure safety
+      const safeData: Record<string, string> = {};
+      Object.entries(dataWithEventId).forEach(([key, value]) => {
+        safeData[key] = String(value);
+      });
+
+      // Set local state
+      setChatData(safeData);
+    },
+    [eventId]
+  );
 
   return (
     <ErrorBoundary
@@ -84,6 +102,7 @@ export default function SafeAIChat({
         initialMessage={initialMessage}
         placeholder={placeholder}
         eventContext={eventContext}
+        eventId={eventId}
         onEventDataCollected={handleDataCollection}
       />
     </ErrorBoundary>

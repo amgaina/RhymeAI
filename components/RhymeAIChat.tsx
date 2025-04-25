@@ -33,12 +33,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { convertToSSML, TTSVoiceParams } from "@/lib/tts-utils";
 import { saveChatMessage } from "@/app/actions/chat/save";
-import { loadChatHistory, syncChatMessages } from "@/app/actions/chat/sync";
+import { syncChatMessages } from "@/app/actions/chat/sync";
+import { loadEventChatHistory } from "@/app/actions/chat/load-event-chat";
 
 interface RhymeAIChatProps {
   title?: string;
@@ -97,6 +98,24 @@ export function RhymeAIChat({
   );
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
+  // Create a stable body object that doesn't change on every render
+  const chatBody = useMemo(() => ({ eventContext }), [eventContext]);
+
+  // Create a stable initial message that doesn't change on every render
+  const initialChatMessage = useMemo(() => {
+    if (initialMessage && !eventId) {
+      return [
+        {
+          id: `initial-message-${Date.now()}`,
+          role: "assistant",
+          content: initialMessage,
+          parts: [{ type: "text", text: initialMessage }],
+        },
+      ];
+    }
+    return undefined;
+  }, [initialMessage, eventId]);
+
   const {
     messages,
     input,
@@ -106,19 +125,8 @@ export function RhymeAIChat({
     setMessages,
   } = useChat({
     api: "/api/chat",
-    body: {
-      eventContext,
-    },
-    initialMessages: initialMessage
-      ? [
-          {
-            id: "initial-message",
-            role: "assistant",
-            content: initialMessage,
-            parts: [{ type: "text", text: initialMessage }],
-          },
-        ]
-      : undefined,
+    body: chatBody,
+    initialMessages: initialChatMessage,
     onResponse: (response) => {
       // Clear any previous errors
       setError(null);
@@ -164,7 +172,18 @@ export function RhymeAIChat({
                 typeof eventData === "object" &&
                 Object.keys(eventData).length > 0
               ) {
-                onEventDataCollected(eventData);
+                // Make sure we include the eventId in the data we pass to the parent
+                if (eventData.eventId) {
+                  console.log(
+                    "AI tool created event with ID:",
+                    eventData.eventId
+                  );
+                  // Pass the eventId to the parent component
+                  onEventDataCollected(eventData);
+                } else {
+                  // No eventId in the data, just pass it as is
+                  onEventDataCollected(eventData);
+                }
               } else {
                 console.error(
                   "Invalid event data received from tool call:",
@@ -174,6 +193,7 @@ export function RhymeAIChat({
 
               // If the eventData has an ID and we don't have an eventId yet, store it
               if (eventData.eventId && !createdEventId) {
+                console.log("Setting createdEventId to:", eventData.eventId);
                 setCreatedEventId(eventData.eventId);
               }
 
@@ -214,14 +234,21 @@ export function RhymeAIChat({
           }
         }
 
+        // Use either the provided eventId or the createdEventId
+        const currentEventId = eventId || createdEventId;
+
         // Save the assistant message to database if we have an eventId
-        if (createdEventId) {
+        if (currentEventId) {
+          console.log(`Saving assistant message for event ${currentEventId}`);
+
           saveChatMessage({
-            eventId: createdEventId,
+            eventId: currentEventId,
             messageId: message.id,
             role: "assistant",
             content: message.content,
             toolCalls: message.toolInvocations || undefined,
+          }).catch((error) => {
+            console.error("Failed to save assistant message:", error);
           });
         }
       } catch (e) {
@@ -315,14 +342,19 @@ export function RhymeAIChat({
     setError(null); // Clear any existing errors
 
     try {
+      // Use either the provided eventId or the createdEventId
+      const currentEventId = eventId || createdEventId;
+
       // Save the user message to database if we have an eventId
-      if (createdEventId && input.trim()) {
+      if (currentEventId && input.trim()) {
         // Generate a temporary ID for the message
         const messageId = `user-${Date.now()}`;
 
+        console.log(`Saving user message for event ${currentEventId}`);
+
         // Save the message to the database
         await saveChatMessage({
-          eventId: createdEventId,
+          eventId: currentEventId,
           messageId: messageId,
           role: "user",
           content: input,
@@ -345,15 +377,35 @@ export function RhymeAIChat({
 
   // Save initial message to database if we have an eventId
   useEffect(() => {
-    if (createdEventId && initialMessage && messages.length === 1) {
-      saveChatMessage({
-        eventId: createdEventId,
-        messageId: messages[0].id,
-        role: "assistant",
-        content: initialMessage,
-      });
+    // Use either the provided eventId or the createdEventId
+    const currentEventId = eventId || createdEventId;
+
+    // Only run this once when we have both an event ID and an initial message
+    if (currentEventId && initialMessage && !isLoadingHistory) {
+      // We'll use a ref to track if we've already saved the initial message
+      const hasInitialMessage = messages.some(
+        (msg) =>
+          msg.role === "assistant" &&
+          (msg.id.startsWith("initial-message") ||
+            msg.content === initialMessage)
+      );
+
+      if (hasInitialMessage) {
+        console.log(`Saving initial message for event ${currentEventId}`);
+
+        // Use a consistent ID for the initial message in the database
+        // This ensures we don't create duplicate initial messages
+        saveChatMessage({
+          eventId: currentEventId,
+          messageId: "initial-message-db", // Use a fixed ID for database storage
+          role: "assistant",
+          content: initialMessage,
+        }).catch((error) => {
+          console.error("Failed to save initial message:", error);
+        });
+      }
     }
-  }, [createdEventId, initialMessage, messages]);
+  }, [eventId, createdEventId, initialMessage, isLoadingHistory]);
 
   // Generate script when all data is collected
   const handleGenerateScript = () => {
@@ -469,58 +521,145 @@ export function RhymeAIChat({
 
   // Load chat history if an eventId is provided
   useEffect(() => {
+    // Create a flag to track if the component is mounted
+    let isMounted = true;
+
     async function fetchChatHistory() {
-      if (eventId) {
-        setIsLoadingHistory(true);
-        try {
-          const response = await loadChatHistory(eventId);
-          if (response.success && response.messages.length > 0) {
-            // Only set messages if we got a successful response with messages
-            setMessages(response.messages);
+      if (!eventId) return;
+
+      setIsLoadingHistory(true);
+      try {
+        const response = await loadEventChatHistory(eventId);
+
+        // Only proceed if the component is still mounted
+        if (!isMounted) return;
+
+        if (
+          response.success &&
+          response.messages &&
+          response.messages.length > 0
+        ) {
+          console.log(
+            `Loaded ${response.messages.length} chat messages for event ${eventId}`
+          );
+
+          // Replace all messages with the loaded ones - don't try to merge
+          setMessages(response.messages);
+        } else {
+          console.log(
+            `No chat history found for event ${eventId} or failed to load`
+          );
+
+          // If we have no chat history, set the initial welcome message
+          // But only if we're not already showing messages
+          if (initialMessage && messages.length === 0) {
+            setMessages([
+              {
+                id: `initial-message-${Date.now()}`,
+                role: "assistant",
+                content: initialMessage,
+                parts: [{ type: "text", text: initialMessage }],
+              },
+            ]);
           }
-        } catch (error) {
-          console.error("Failed to load chat history:", error);
-        } finally {
+        }
+      } catch (error) {
+        console.error("Failed to load chat history:", error);
+      } finally {
+        if (isMounted) {
           setIsLoadingHistory(false);
         }
       }
     }
 
     fetchChatHistory();
-  }, [eventId, setMessages]);
+
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId, initialMessage]); // Remove messages and setMessages from dependencies
 
   // Sync chat messages to the database periodically or when component unmounts
   useEffect(() => {
     let syncInterval: NodeJS.Timeout;
+    let isMounted = true;
 
     // Function to sync all messages that might not be in the database
     const syncAllMessages = async () => {
-      if (createdEventId && messages.length > 0) {
-        // Filter and convert messages to the format expected by syncChatMessages
-        const chatMessagesToSync = messages
-          .filter((msg) => msg.role === "user" || msg.role === "assistant")
-          .map((msg) => ({
-            id: msg.id,
-            role: msg.role as "user" | "assistant", // Cast to the expected type
-            content: msg.content,
-            toolCalls: msg.toolInvocations || undefined,
-          }));
+      // Use either the provided eventId or the createdEventId
+      const currentEventId = eventId || createdEventId;
 
-        await syncChatMessages(createdEventId, chatMessagesToSync);
+      if (!currentEventId || messages.length === 0 || !isMounted) return;
+
+      // Don't log on every sync to reduce console noise
+      // console.log(`Syncing ${messages.length} messages for event ${currentEventId}`);
+
+      // Filter and convert messages to the format expected by syncChatMessages
+      const chatMessagesToSync = messages
+        .filter((msg) => msg.role === "user" || msg.role === "assistant")
+        .filter((msg) => !msg.id.startsWith("initial-message")) // Skip any initial welcome messages
+        .map((msg) => ({
+          id: msg.id,
+          role: msg.role as "user" | "assistant", // Cast to the expected type
+          content: msg.content,
+          toolCalls: msg.toolInvocations || undefined,
+        }));
+
+      if (chatMessagesToSync.length > 0) {
+        try {
+          const result = await syncChatMessages(
+            currentEventId,
+            chatMessagesToSync
+          );
+          if (result.success && isMounted) {
+            // Only log on successful sync
+            console.log(
+              `Successfully synced ${chatMessagesToSync.length} messages`
+            );
+          } else if (!result.success && isMounted) {
+            console.error("Failed to sync messages:", result.error);
+          }
+        } catch (error) {
+          if (isMounted) {
+            console.error("Error during message sync:", error);
+          }
+        }
       }
     };
 
     // Set up periodic sync (every 30 seconds)
-    if (createdEventId) {
-      syncInterval = setInterval(syncAllMessages, 30000);
+    const currentEventId = eventId || createdEventId;
+    if (currentEventId) {
+      // Initial sync with a small delay to avoid race conditions
+      const initialSyncTimeout = setTimeout(() => {
+        if (isMounted) {
+          syncAllMessages();
+        }
+      }, 1000);
+
+      // Periodic sync
+      syncInterval = setInterval(() => {
+        if (isMounted) {
+          syncAllMessages();
+        }
+      }, 30000);
+
+      // Cleanup function
+      return () => {
+        isMounted = false;
+        clearTimeout(initialSyncTimeout);
+        clearInterval(syncInterval);
+
+        // Final sync attempt when component unmounts
+        syncAllMessages().catch((e) => console.error("Final sync error:", e));
+      };
     }
 
-    // Sync when component unmounts
     return () => {
-      clearInterval(syncInterval);
-      syncAllMessages();
+      isMounted = false;
     };
-  }, [createdEventId, messages]);
+  }, [eventId, createdEventId]); // Remove messages from dependencies
 
   // Custom styles for markdown components
   const markdownStyles = {

@@ -56,6 +56,25 @@ export default function EventCreationFlow() {
       return;
     }
 
+    console.log("Event data received:", data);
+
+    // Check if the data already contains an eventId (created by AI tool)
+    if (data.eventId) {
+      console.log("Event already created by AI tool with ID:", data.eventId);
+
+      // Update state with the event ID from the AI tool
+      setEventId(data.eventId);
+      setEventData(data);
+      setProgress(25);
+
+      toast({
+        title: "Event details collected!",
+        description: "You can now proceed to create a layout for your event.",
+      });
+
+      return;
+    }
+
     setEventData(data);
     setProgress(25);
 

@@ -264,6 +264,7 @@ What would you like to update or add to your event details? I can help you refin
                 : "Hi! I'm your RhymeAI event assistant. I'll help you create a script for your event's AI host. To create an effective script, I need to collect some essential information about your event. Let's start with the basics:\n\n1. What's the name of your event?\n2. What type of event is it? (conference, webinar, workshop, etc.)\n3. When will the event take place?\n4. Where will it be held?\n5. How many attendees do you expect?\n6. Please provide a brief description of your event.\n7. Do you have any preferences for the AI host's voice? (gender, tone, accent)\n\nYou can share as much detail as you'd like - the more information you provide, the better I can tailor the AI host script to your specific event!"
             }
             placeholder="Tell me about your event..."
+            eventId={eventId || undefined}
             eventContext={{
               purpose: "To create a customized AI host script for an event",
               requiredFields: [
@@ -282,6 +283,7 @@ What would you like to update or add to your event details? I can help you refin
                 currentStep: "information-gathering",
                 nextStep: "layout-generation",
                 existingData: useChat && eventData ? eventData : undefined,
+                eventId: eventId || undefined,
               },
             }}
             onEventDataCollected={(data) => {
