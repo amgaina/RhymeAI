@@ -23,21 +23,6 @@ export default function CreateEvent() {
     <div className="min-h-screen bg-secondary">
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        <div className="mb-8 animate-slide-up">
-          <Link
-            href="/dashboard"
-            className="text-primary-foreground/70 hover:text-primary-foreground inline-flex items-center"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Dashboard
-          </Link>
-          <h1 className="text-3xl font-bold text-primary-foreground mt-4">
-            Create New Event
-          </h1>
-          <p className="text-primary-foreground/70">
-            Set up your AI emcee for your upcoming event
-          </p>
-        </div>
 
         <div
           className="flex flex-col items-center justify-center space-y-8 my-10 animate-fade-in"
@@ -81,7 +66,7 @@ export default function CreateEvent() {
                   conversation.
                 </p>
                 <Button
-                  className="bg-cta hover:bg-cta/90 text-white w-full btn-pulse"
+                  className="border-white text-white bg-primary hover:bg-accent/2 px-8 py-6 text-lg rounded-xl transition-colors duration-300"
                   onClick={handleCreateEvent}
                 >
                   Start Creating with AI

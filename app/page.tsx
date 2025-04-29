@@ -2,7 +2,6 @@ import { ArrowRight, Calendar, Globe, Mic2, Users, UserCircle2 } from "lucide-re
 import { Button } from "@/components/ui/button"
 import { CreateEventButton } from "@/components/CreateEventButton";
 
-
 export default async function Home() {
   return (
     <div className="flex flex-col min-h-screen">

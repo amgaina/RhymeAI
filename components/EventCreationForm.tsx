@@ -40,6 +40,8 @@ import { Play, Plus, RotateCw } from "lucide-react";
 import { getVoicePreview } from "../app/actions/event";
 import { generateEventScript } from "../app/actions/event";
 
+
+
 // Form validation schema
 const eventFormSchema = z.object({
   // Event Details
@@ -384,7 +386,7 @@ ${result.script.conclusion}
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Start Date</FormLabel>
-                        <FormControl>
+                        <FormControl >
                           <Input type="date" {...field} />
                         </FormControl>
                         <FormMessage />
