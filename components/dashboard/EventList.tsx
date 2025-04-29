@@ -17,8 +17,21 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import Link from "next/link";
 
 export interface EventItem {
@@ -42,6 +55,8 @@ interface EventListProps {
   events: EventItem[];
   onSelectEvent: (eventId: string) => void;
   onContinueEvent: (eventId: string, status: string) => void;
+  onDeleteEvent?: (eventId: string) => void;
+  isDeleting?: Record<string, boolean>;
   createEventLink: string;
 }
 
@@ -49,6 +64,8 @@ export default function EventList({
   events,
   onSelectEvent,
   onContinueEvent,
+  onDeleteEvent,
+  isDeleting = {},
   createEventLink,
 }: EventListProps) {
   // Helper function to determine what action button to show based on event status
@@ -267,6 +284,57 @@ export default function EventList({
                             <ArrowRight className="h-3 w-3 mr-1" />
                             Continue Setup
                           </Button>
+                        )}
+
+                        {/* Delete button with confirmation dialog */}
+                        {onDeleteEvent && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-2 text-destructive hover:bg-destructive/10"
+                                disabled={isDeleting[event.id]}
+                              >
+                                {isDeleting[event.id] ? (
+                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3 w-3 mr-1" />
+                                )}
+                                {isDeleting[event.id]
+                                  ? "Deleting..."
+                                  : "Delete"}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  Delete Event
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete "{event.name}
+                                  "? This action cannot be undone and will
+                                  permanently delete:
+                                  <ul className="list-disc pl-5 mt-2">
+                                    <li>All event details</li>
+                                    <li>All layout segments</li>
+                                    <li>All script segments</li>
+                                    <li>All audio files</li>
+                                    <li>All chat messages</li>
+                                  </ul>
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={() => onDeleteEvent(event.id)}
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         )}
                       </div>
                     </td>

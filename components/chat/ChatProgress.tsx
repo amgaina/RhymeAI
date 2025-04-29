@@ -6,27 +6,37 @@ import { ListChecks, ArrowDownCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Create a memoized version of the component to prevent unnecessary re-renders
-interface ChatProgressProps {
+export interface ChatProgressProps {
+  progressPercentage?: number;
   requiredFields: string[];
   collectedFields: Record<string, any>;
+  isDataComplete?: boolean;
   onGenerateScript: () => void;
 }
 
 // Create a memoized version of the component
 export const ChatProgress = memo(function ChatProgress({
+  progressPercentage: propProgressPercentage,
   requiredFields,
   collectedFields,
+  isDataComplete: propIsComplete,
   onGenerateScript,
 }: ChatProgressProps) {
   // Use refs to track state without causing re-renders
   const isProcessingRef = useRef(false);
   const btnRef = useRef<HTMLButtonElement>(null);
 
-  // Calculate progress
+  // Calculate progress (use props if provided, otherwise calculate)
   const progressCount = Object.values(collectedFields).filter(Boolean).length;
   const totalFields = requiredFields.length || 1; // Prevent division by zero
-  const progressPercentage = Math.round((progressCount / totalFields) * 100);
-  const isComplete = progressCount >= totalFields;
+  const progressPercentage =
+    propProgressPercentage !== undefined
+      ? propProgressPercentage
+      : Math.round((progressCount / totalFields) * 100);
+  const isComplete =
+    propIsComplete !== undefined
+      ? propIsComplete
+      : progressCount >= totalFields;
 
   // Handle click - simplified to avoid state changes
   const handleClick = () => {

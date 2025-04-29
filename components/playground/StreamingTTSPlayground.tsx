@@ -249,7 +249,7 @@ export default function StreamingTTSPlayground() {
                 </div>
                 <Slider
                   id="speaking-rate"
-                  min={0.5}
+                  min={0.25}
                   max={2.0}
                   step={0.1}
                   value={[speakingRate]}
@@ -329,7 +329,7 @@ export default function StreamingTTSPlayground() {
                 </div>
                 <Slider
                   id="browser-rate"
-                  min={0.5}
+                  min={0.25}
                   max={2.0}
                   step={0.1}
                   value={[speakingRate]}

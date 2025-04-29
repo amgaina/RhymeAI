@@ -27,33 +27,56 @@ export async function saveChatMessage({
       throw new Error("Unauthorized");
     }
 
-    // Use the raw query capability of Prisma as a temporary workaround
-    // until you regenerate the Prisma client
-    await (db as any).$executeRaw`
-      INSERT INTO chat_messages (
-        event_id, user_id, message_id, role, content, tool_calls, created_at
-      ) VALUES (
-        ${eventId}, ${userId}, ${messageId}, ${role}, ${content},
-        ${toolCalls ? JSON.stringify(toolCalls) : null}, NOW()
-      )
-    `;
+    console.log(
+      `Saving chat message for event ${eventId}, message ID: ${messageId}, role: ${role}`
+    );
 
-    // Once you regenerate the Prisma client, you can replace the above with:
-
-    await db.chat_messages.create({
-      data: {
+    // First, check if this message already exists to avoid duplicates
+    const existingMessage = await db.chat_messages.findFirst({
+      where: {
         event_id: eventId,
         user_id: userId,
         message_id: messageId,
-        role,
-        content,
-        tool_calls: toolCalls ? toolCalls : undefined,
       },
     });
 
-    return { success: true };
+    if (existingMessage) {
+      console.log(`Message ${messageId} already exists, updating it`);
+      // Message already exists, update it instead of creating a new one
+      await db.chat_messages.updateMany({
+        where: {
+          event_id: eventId,
+          user_id: userId,
+          message_id: messageId,
+        },
+        data: {
+          content,
+          tool_calls: toolCalls ? JSON.stringify(toolCalls) : null,
+        },
+      });
+    } else {
+      console.log(`Creating new message ${messageId} for event ${eventId}`);
+      // Message doesn't exist, create a new one
+      await db.chat_messages.create({
+        data: {
+          event_id: eventId,
+          user_id: userId,
+          message_id: messageId,
+          role,
+          content,
+          tool_calls: toolCalls ? toolCalls : undefined,
+        },
+      });
+    }
+
+    return { success: true, messageId };
   } catch (error) {
-    console.error("Failed to save chat message:", error);
-    return { success: false, error: "Failed to save chat message" };
+    console.error(`Failed to save chat message for event ${eventId}:`, error);
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Failed to save chat message",
+      messageId,
+    };
   }
 }

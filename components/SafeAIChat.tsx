@@ -26,7 +26,10 @@ interface SafeAIChatProps {
   placeholder: string;
   eventContext: any;
   eventId?: number; // Add eventId prop to associate chat with an event
+  chatSessionId?: string; // Add chatSessionId prop to maintain chat continuity
+  preserveChat?: boolean; // Whether to preserve chat messages between sessions
   onEventDataCollected: (data: Record<string, string>) => void;
+  onContinue?: () => void; // Add onContinue prop to handle navigation to next step
 }
 
 export default function SafeAIChat({
@@ -37,7 +40,10 @@ export default function SafeAIChat({
   placeholder,
   eventContext,
   eventId,
+  chatSessionId,
+  preserveChat = false,
   onEventDataCollected,
+  onContinue,
 }: SafeAIChatProps) {
   const [chatData, setChatData] = useState<Record<string, string> | null>(null);
 
@@ -103,7 +109,10 @@ export default function SafeAIChat({
         placeholder={placeholder}
         eventContext={eventContext}
         eventId={eventId}
+        chatSessionId={chatSessionId}
+        preserveChat={preserveChat}
         onEventDataCollected={handleDataCollection}
+        onContinue={onContinue}
       />
     </ErrorBoundary>
   );

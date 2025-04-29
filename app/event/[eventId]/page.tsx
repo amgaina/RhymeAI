@@ -483,7 +483,7 @@ export default function EventDetailPage() {
       status: "draft",
       timing: 30, // Default 30 seconds
       order: event.scriptSegments.length + 1,
-      audio: null,
+      audio_url: null,
       presentationSlide: null,
     };
 
@@ -500,7 +500,7 @@ export default function EventDetailPage() {
     try {
       // First delete the audio file if it exists
       const segment = event.scriptSegments.find((s) => s.id === segmentId);
-      if (segment?.audio) {
+      if (segment?.audio_url) {
         // Delete the audio file from S3
         await deleteScriptSegmentAudio(segmentId);
       }
@@ -786,10 +786,24 @@ export default function EventDetailPage() {
                 eventId={parseInt(eventId as string)}
                 layout={eventLayout}
                 isGenerating={isGeneratingLayout}
+                eventName={event.name}
+                eventType={event.type}
+                eventDate={event.date ? new Date(event.date) : undefined}
+                eventStartTime={event.date ? new Date(event.date) : undefined}
+                eventEndTime={event.date ? new Date(event.date) : undefined}
                 onRegenerateLayout={handleRegenerateLayout}
                 onUpdateSegment={handleUpdateLayoutSegment}
                 onAddSegment={handleAddLayoutSegment}
                 onDeleteSegment={handleDeleteLayoutSegment}
+                onReorderSegments={(segments) => {
+                  if (eventLayout) {
+                    setEventLayout({
+                      ...eventLayout,
+                      segments,
+                      lastUpdated: new Date().toISOString(),
+                    });
+                  }
+                }}
               />
             </TabsContent>
 
@@ -797,6 +811,7 @@ export default function EventDetailPage() {
             <TabsContent value="script" className="space-y-4">
               <div className="grid grid-cols-1 gap-6">
                 <EnhancedScriptManager
+                  eventId={parseInt(eventId as string)}
                   segments={event.scriptSegments || []}
                   onUpdateSegment={handleUpdateSegment}
                   onGenerateAudio={handleGenerateAudio}
@@ -807,7 +822,9 @@ export default function EventDetailPage() {
                   onGenerateAllTTS={handleGenerateAllTTS}
                   onGenerateSingleTTS={handleGenerateSingleTTS}
                   isGeneratingScript={isGeneratingScript}
-                  hasLayout={!!event.layout && event.layout.segments.length > 0} // Pass layout availability
+                  hasLayout={!!event.layout && event.layout.segments.length > 0}
+                  eventName={event.name}
+                  eventType={event.type}
                 />
               </div>
             </TabsContent>
@@ -894,6 +911,19 @@ export default function EventDetailPage() {
               initialMessage={`How can I help with '${event.name}'? Ask me about managing voices, event settings, or generating content.`}
               placeholder="Ask about this event..."
               className="border-0 shadow-none"
+              eventId={parseInt(eventId as string)}
+              eventContext={{
+                purpose: "event-assistance",
+                requiredFields: [],
+                contextType: "general-assistant",
+                additionalInfo: {
+                  eventName: event.name,
+                  eventType: event.type,
+                  eventDate: event.date,
+                  eventStatus: event.status,
+                },
+              }}
+              preserveChat={true}
             />
           </Card>
         </div>

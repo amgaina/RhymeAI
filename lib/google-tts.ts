@@ -46,7 +46,7 @@ export interface VoiceConfig {
  * Default voice configurations
  *
  * Valid ranges for parameters:
- * - speakingRate: 0.25 to 4.0
+ * - speakingRate: 0.25 to 2.0 (Google TTS API limit)
  * - pitch: -20.0 to 20.0
  * - volumeGainDb: -96.0 to 16.0
  */
@@ -64,7 +64,7 @@ export const DEFAULT_VOICES: Record<string, VoiceConfig> = {
     name: "en-US-Neural2-D",
     ssmlGender: "MALE",
     speakingRate: 1.0, // Within valid range
-    pitch: -0.5, // Within valid range
+    pitch: 0, // Neutral pitch to avoid distortion
     volumeGainDb: 0, // Within valid range
   },
   energetic: {
@@ -82,6 +82,14 @@ export const DEFAULT_VOICES: Record<string, VoiceConfig> = {
     speakingRate: 0.9, // Within valid range
     pitch: -1.0, // Within valid range
     volumeGainDb: 0, // Within valid range
+  },
+  mc: {
+    languageCode: "en-US",
+    name: "en-US-Neural2-D", // Male voice with good projection
+    ssmlGender: "MALE",
+    speakingRate: 1.15, // Slightly faster, but not rushed (good for MC)
+    pitch: 1.5, // Slightly higher for enthusiasm
+    volumeGainDb: 4.0, // More projection and presence
   },
 };
 
@@ -137,12 +145,12 @@ export async function generateTTS(
 
     // Validate all parameters to ensure they're within valid ranges
 
-    // 1. Speaking rate: valid range is 0.25 to 4.0
+    // 1. Speaking rate: valid range is 0.25 to 2.0 (Google TTS API limit)
     const speakingRate = voiceConfig.speakingRate || 1.0;
-    const validSpeakingRate = Math.max(0.25, Math.min(4.0, speakingRate));
+    const validSpeakingRate = Math.max(0.25, Math.min(2.0, speakingRate));
     if (speakingRate !== validSpeakingRate) {
       console.warn(
-        `Speaking rate adjusted from ${speakingRate} to ${validSpeakingRate} to be within valid range (0.25 to 4.0)`
+        `Speaking rate adjusted from ${speakingRate} to ${validSpeakingRate} to be within valid range (0.25 to 2.0)`
       );
     }
 
@@ -177,8 +185,28 @@ export async function generateTTS(
         speakingRate: validSpeakingRate,
         pitch: validPitch,
         volumeGainDb: validVolumeGainDb,
+        // Higher quality audio settings for MC-style voice
+        sampleRateHertz: 24000, // Increased from default for better clarity
+        // Use effects profiles suited for presentation and announcement scenarios
+        effectsProfileId: [
+          "large-home-entertainment-class-device", // For better projection
+          "headphone-class-device", // For clarity and detail
+        ],
       },
     };
+
+    // Log the request for debugging
+    console.log("Google TTS request:", {
+      languageCode: request.voice.languageCode,
+      name: request.voice.name,
+      ssmlGender: request.voice.ssmlGender,
+      speakingRate: request.audioConfig.speakingRate,
+      pitch: request.audioConfig.pitch,
+      volumeGainDb: request.audioConfig.volumeGainDb,
+      sampleRateHertz: request.audioConfig.sampleRateHertz,
+      effectsProfileId: request.audioConfig.effectsProfileId,
+      textLength: ssml.length,
+    });
 
     // Generate the audio
     const [response] = await ttsClient.synthesizeSpeech(request);
@@ -187,7 +215,9 @@ export async function generateTTS(
       throw new Error("No audio content returned from Google TTS");
     }
 
-    return Buffer.from(response.audioContent as Uint8Array);
+    const audioBuffer = Buffer.from(response.audioContent as Uint8Array);
+    console.log(`Generated audio buffer size: ${audioBuffer.length} bytes`);
+    return audioBuffer;
   } catch (error) {
     console.error("Error generating TTS:", error);
     throw new Error(
@@ -231,17 +261,65 @@ export function getVoiceConfigFromSettings(voiceSettings: any): VoiceConfig {
 
   // Validate all parameters to ensure they're within valid ranges
 
-  // 1. Speaking rate: valid range is 0.25 to 4.0
-  let speakingRate = settings.speakingRate || baseConfig.speakingRate || 1.0;
-  speakingRate = Math.max(0.25, Math.min(4.0, speakingRate));
+  // 1. Speaking rate: valid range is 0.25 to 2.0 (Google TTS API limit)
+  // Convert from percentage (0-100) to actual rate (0.25-2.0) if needed
+  let speakingRate;
+  if (settings.speakingRate !== undefined) {
+    // If it's a percentage (0-100), convert to actual rate
+    if (settings.speakingRate >= 0 && settings.speakingRate <= 100) {
+      // Map 0-100 to 0.25-2.0
+      speakingRate = 0.25 + (settings.speakingRate / 100) * (2.0 - 0.25);
+    } else {
+      // Assume it's already in the correct range
+      speakingRate = settings.speakingRate;
+    }
+  } else {
+    speakingRate = baseConfig.speakingRate || 1.0;
+  }
+  // Ensure it's within valid range
+  speakingRate = Math.max(0.25, Math.min(2.0, speakingRate));
 
   // 2. Pitch: valid range is -20.0 to 20.0
-  let pitch = settings.pitch || baseConfig.pitch || 0;
+  // Convert from percentage (-100 to 100) to actual pitch (-20 to 20) if needed
+  let pitch;
+  if (settings.pitch !== undefined) {
+    // If it's a percentage (-100 to 100), convert to actual pitch
+    if (settings.pitch >= -100 && settings.pitch <= 100) {
+      // Map -100-100 to -20-20
+      pitch = (settings.pitch / 100) * 20;
+    } else {
+      // Assume it's already in the correct range
+      pitch = settings.pitch;
+    }
+  } else {
+    pitch = baseConfig.pitch || 0;
+  }
+  // Ensure it's within valid range
   pitch = Math.max(-20.0, Math.min(20.0, pitch));
 
   // 3. Volume gain: valid range is -96.0 to 16.0
+  // For volume, we'll keep it at 0 (neutral) to avoid distortion
   let volumeGainDb = settings.volumeGainDb || baseConfig.volumeGainDb || 0;
-  volumeGainDb = Math.max(-96.0, Math.min(16.0, volumeGainDb));
+  volumeGainDb = Math.max(-6.0, Math.min(6.0, volumeGainDb)); // More conservative range
+
+  // If MC type is specified, apply special handling
+  if (voiceType === "mc") {
+    // For MC type, we want to ensure energetic, clear delivery
+    speakingRate = settings.speakingRate ?? 1.15;
+    pitch = settings.pitch ?? 1.5;
+    volumeGainDb = settings.volumeGainDb ?? 4.0;
+
+    // Ensure parameters are within valid ranges but favor MC characteristics
+    speakingRate = Math.max(0.9, Math.min(1.35, speakingRate)); // Narrower range for clarity
+    pitch = Math.max(0, Math.min(3.0, pitch)); // Keep positive for energy
+    volumeGainDb = Math.max(2.0, Math.min(6.0, volumeGainDb)); // Ensure good projection
+
+    // Override voice if not specifically requested
+    if (!settings.name) {
+      baseConfig.name = "en-US-Neural2-D"; // Default to a good MC voice
+      baseConfig.ssmlGender = "MALE";
+    }
+  }
 
   // Override with custom settings if provided, using validated values
   return {
@@ -403,8 +481,8 @@ export function estimateTTSDuration(
   text: string,
   speakingRate: number = 1.0
 ): number {
-  // Ensure speaking rate is within valid range (0.25 to 4.0)
-  const validSpeakingRate = Math.max(0.25, Math.min(4.0, speakingRate));
+  // Ensure speaking rate is within valid range (0.25 to 2.0)
+  const validSpeakingRate = Math.max(0.25, Math.min(2.0, speakingRate));
 
   // Remove SSML tags for calculation
   const cleanText = text.replace(/<[^>]+>/g, "");

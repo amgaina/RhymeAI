@@ -27,6 +27,8 @@ export interface LayoutSegment {
   description: string; // Brief description of the segment
   duration: number; // Duration in minutes
   order: number; // Order in the event flow
+  startTime?: string; // Start time in format "HH:MM AM/PM"
+  endTime?: string; // End time in format "HH:MM AM/PM"
   customProperties?: Record<string, any>; // For segment-specific properties
 }
 
@@ -95,6 +97,8 @@ export interface LayoutSegmentDB {
   description: string;
   duration: number;
   order: number;
+  start_time: string | null;
+  end_time: string | null;
   custom_properties: Record<string, any> | null;
   created_at: Date;
   updated_at: Date;

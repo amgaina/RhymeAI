@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { convertToSSML, applyVoiceParams } from "@/lib/tts-utils";
 import { db } from "@/lib/db";
-import {
-  uploadToS3,
-  generateAudioKey,
-  isS3Configured,
-  getS3Url,
-} from "@/lib/s3-utils";
+import { uploadToS3, generateAudioKey, isS3Configured } from "@/lib/s3-utils";
 import { generateTTS, getBestVoiceMatch } from "@/lib/tts-service";
 
 /**
@@ -15,7 +10,8 @@ import { generateTTS, getBestVoiceMatch } from "@/lib/tts-service";
  */
 export async function POST(req: Request) {
   try {
-    const { content, scriptData, voiceSettings, segmentId } = await req.json();
+    const { content, scriptData, voiceSettings, segmentId, eventId } =
+      await req.json();
 
     // If segmentId is provided, fetch the segment content from the database
     if (segmentId && !content && !scriptData) {
@@ -67,9 +63,6 @@ export async function POST(req: Request) {
         const processedSsml = applyVoiceParams(ssml, mergedVoiceSettings || {});
 
         // Generate audio using TTS service
-        let audioUrl: string;
-        let audioBuffer: Buffer;
-
         try {
           // Get the best voice match based on voice settings
           const voiceId = await getBestVoiceMatch({
@@ -79,15 +72,16 @@ export async function POST(req: Request) {
           });
 
           // Generate audio using TTS service
-          audioBuffer = await generateTTS(processedSsml, voiceId);
+          const audioBuffer = await generateTTS(processedSsml, voiceId);
 
           // Upload to S3 if configured
+          let audioUrl: string;
           if (isS3Configured()) {
             const s3Key = generateAudioKey(segment.event_id, segmentIdNum);
             audioUrl = await uploadToS3(audioBuffer, s3Key, "audio/mpeg");
           } else {
-            // Fallback to mock URL if S3 is not configured
-            audioUrl = `https://api.example.com/audio/segment-${segmentId}-${Date.now()}.mp3`;
+            // Error if S3 is not configured - we won't use mock URLs anymore
+            throw new Error("S3 is not configured for audio storage");
           }
 
           // Update the segment with the audio URL and duration
@@ -114,28 +108,18 @@ export async function POST(req: Request) {
         } catch (ttsError) {
           console.error("TTS generation error:", ttsError);
 
-          // Fallback to mock URL
-          audioUrl = `https://api.example.com/audio/segment-${segmentId}-${Date.now()}.mp3`;
-
-          // Update the segment with the mock audio URL
-          await db.script_segments.update({
-            where: { id: segmentIdNum },
-            data: {
-              audio_url: audioUrl,
-              status: "generated",
-              timing: Math.ceil(segment.content.length / 20) * 1000,
+          // Don't generate a fallback URL or update the database
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                ttsError instanceof Error
+                  ? ttsError.message
+                  : "Failed to generate TTS audio",
+              segmentId,
             },
-          });
-
-          // Update the script_segments JSON in the events table
-          await updateEventScriptSegments(segment.event_id);
-
-          return NextResponse.json({
-            success: true,
-            audioUrl,
-            segmentId,
-            message: "Audio generated with fallback URL",
-          });
+            { status: 500 }
+          );
         }
       } catch (dbError) {
         console.error("Database error fetching segment:", dbError);
@@ -207,14 +191,12 @@ export async function POST(req: Request) {
         const s3Key = generateAudioKey(eventId, segmentId || "direct");
         audioUrl = await uploadToS3(audioBuffer, s3Key, "audio/mpeg");
       } else {
-        // Fallback to mock URL if S3 is not configured
-        audioUrl = `https://api.example.com/audio/content-${
-          segmentId || Date.now()
-        }.mp3`;
+        // Error if S3 is not configured - we won't use mock URLs anymore
+        throw new Error("S3 is not configured for audio storage");
       }
 
       // If segmentId is provided, update the segment with the audio URL
-      if (segmentId) {
+      if (segmentId && audioUrl) {
         const segmentIdNum = parseInt(segmentId, 10);
         if (!isNaN(segmentIdNum)) {
           await db.script_segments.update({
@@ -223,7 +205,9 @@ export async function POST(req: Request) {
               audio_url: audioUrl,
               status: "generated",
               // In a real implementation, you would calculate the actual duration
-              timing: content ? Math.ceil(content.length / 20) * 1000 : null, // Rough estimate: 20 chars per second
+              timing: content
+                ? Math.ceil(content.length / 20) * 1000
+                : undefined, // Rough estimate: 20 chars per second
             },
           });
 
@@ -242,35 +226,18 @@ export async function POST(req: Request) {
     } catch (ttsError) {
       console.error("TTS generation error:", ttsError);
 
-      // Fallback to mock URL
-      const audioUrl = `https://api.example.com/audio/content-${
-        segmentId || Date.now()
-      }.mp3`;
-
-      // If segmentId is provided, update the segment with the mock audio URL
-      if (segmentId) {
-        const segmentIdNum = parseInt(segmentId, 10);
-        if (!isNaN(segmentIdNum)) {
-          await db.script_segments.update({
-            where: { id: segmentIdNum },
-            data: {
-              audio_url: audioUrl,
-              status: "generated",
-              timing: content ? Math.ceil(content.length / 20) * 1000 : null,
-            },
-          });
-
-          // Update the script_segments JSON in the events table
-          await updateEventScriptSegments(parseInt(eventId, 10));
-        }
-      }
-
-      return NextResponse.json({
-        success: true,
-        audioUrl,
-        segmentId: segmentId || null,
-        message: "Audio generated with fallback URL",
-      });
+      // Don't generate a fallback URL or update the database
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            ttsError instanceof Error
+              ? ttsError.message
+              : "Failed to generate TTS audio",
+          segmentId: segmentId || null,
+        },
+        { status: 500 }
+      );
     }
   } catch (error) {
     console.error("TTS generation error:", error);

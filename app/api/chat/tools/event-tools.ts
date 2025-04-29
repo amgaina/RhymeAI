@@ -12,15 +12,7 @@ import { google } from "@ai-sdk/google";
 import { generateText } from "ai";
 import { LayoutSegment } from "@/types/layout";
 
-// Types for layout generation
-type LayoutSegmentInput = {
-  name: string;
-  type: string;
-  description: string;
-  duration: number;
-  order: number;
-  customProperties?: Record<string, any>;
-};
+// We now use the LayoutSegment type from @/types/layout
 
 /**
  * Tool for storing event data collected during conversation
@@ -161,9 +153,12 @@ export const generateEventLayoutTool = tool({
       if (result.success) {
         return {
           success: true,
-          layout: result.layout,
-          message: result.message || "Event layout generated successfully",
-          isAIGenerated: result.aiContext ? true : false,
+          layout: "layout" in result ? result.layout : undefined,
+          message:
+            "message" in result
+              ? result.message
+              : "Event layout generated successfully",
+          isAIGenerated: "aiContext" in result ? true : false,
         };
       } else {
         return {
@@ -250,7 +245,7 @@ export const generateEventLayoutWithLLMTool = tool({
       // });
 
       const { text: layoutResponse } = await generateText({
-        model: google("gemini-pro", {}),
+        model: google("gemini-2.0-flash-exp", {}),
         messages: [
           {
             role: "system",
@@ -276,42 +271,31 @@ export const generateEventLayoutWithLLMTool = tool({
         throw new Error("Invalid layout format returned from LLM");
       }
 
-      // Convert the LLM output to our layout format
-      const segments = layoutData.segments.map(
-        (segment: any, index: number) => ({
-          name: segment.name,
-          type: segment.type,
-          description: segment.description || `${segment.name} segment`,
-          duration: segment.duration || 10, // Default duration if missing
-          order: segment.order || index + 1,
-          customProperties: segment.notes
-            ? { notes: segment.notes }
-            : undefined,
-        })
+      // We'll let the server action handle the layout segment creation
+
+      // We'll let the server action calculate the total duration based on the event details
+
+      // Import the generateAIEventLayout function from the server action
+      const { generateAIEventLayout } = await import(
+        "@/app/actions/event/layout/ai-generator"
       );
 
-      // Calculate total duration
-      const totalDuration = segments.reduce(
-        (sum: number, segment: any) => sum + segment.duration,
-        0
-      );
-
-      // Store the layout in the database through our server action
-      const result = await storeGeneratedLayout(
-        params.eventId,
-        segments,
-        totalDuration,
-        params.conversationContext || ""
-      );
+      // Call the server action to generate and store the layout
+      const result = await generateAIEventLayout(params.eventId);
 
       if (result.success) {
         return {
           success: true,
-          layout: result.layout,
-          message: "AI-generated event layout created successfully",
+          layout: "layout" in result ? result.layout : undefined,
+          message:
+            "message" in result
+              ? result.message
+              : "AI-generated event layout created successfully",
           llmContext:
             layoutData.reasoning ||
-            "Layout generated based on event type and requirements",
+            ("aiContext" in result
+              ? result.aiContext
+              : "Layout generated based on event type and requirements"),
         };
       } else {
         return {
@@ -403,107 +387,7 @@ function guessEventDuration(eventType: string): number {
   return 60; // Default to 1 hour
 }
 
-/**
- * Store LLM-generated layout in the database
- */
-async function storeGeneratedLayout(
-  eventId: string,
-  segments: LayoutSegmentInput[],
-  totalDuration: number,
-  chatContext: string
-) {
-  try {
-    const eventIdNum = parseInt(eventId, 10);
-    if (isNaN(eventIdNum)) {
-      return {
-        success: false,
-        error: "Invalid event ID format",
-      };
-    }
-
-    const { db } = await import("@/lib/db");
-
-    // Create the layout in the database
-    const layout = await db.event_layout.upsert({
-      where: {
-        event_id: eventIdNum,
-      },
-      update: {
-        total_duration: totalDuration,
-        layout_version: { increment: 1 },
-        updated_at: new Date(),
-        last_generated_by: "gpt-4",
-        chat_context: chatContext,
-      },
-      create: {
-        event_id: eventIdNum,
-        total_duration: totalDuration,
-        last_generated_by: "gpt-4",
-        chat_context: chatContext,
-      },
-    });
-
-    // Delete any existing segments for this layout
-    await db.layout_segments.deleteMany({
-      where: {
-        layout_id: layout.id,
-      },
-    });
-
-    // Create new segments
-    const createdSegments = await Promise.all(
-      segments.map((segment) =>
-        db.layout_segments.create({
-          data: {
-            layout_id: layout.id,
-            name: segment.name,
-            type: segment.type,
-            description: segment.description,
-            duration: segment.duration,
-            order: segment.order,
-            custom_properties: segment.customProperties || {},
-          },
-        })
-      )
-    );
-
-    // Update event status
-    await db.events.update({
-      where: {
-        event_id: eventIdNum,
-      },
-      data: {
-        status: "layout_ready",
-        updated_at: new Date(),
-      },
-    });
-
-    // Revalidate paths
-    const { revalidatePath } = await import("next/cache");
-    revalidatePath(`/events/${eventId}`);
-    revalidatePath(`/event-creation?eventId=${eventId}`);
-    revalidatePath(`/event/${eventId}`);
-
-    return {
-      success: true,
-      layout: {
-        id: layout.id,
-        totalDuration,
-        segments: createdSegments,
-      },
-      message: "Layout stored successfully",
-    };
-  } catch (error) {
-    console.error("Error storing LLM-generated layout:", error);
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Failed to store generated layout",
-    };
-  }
-}
+// The storeGeneratedLayout function has been removed as we now use the generateAIEventLayout server action directly
 
 /**
  * Helper function to get event details

@@ -111,6 +111,8 @@ model layout_segments {
   description       String           @db.Text
   duration          Int              // Duration in minutes
   order             Int
+  start_time        String?          // Start time in format "HH:MM AM/PM"
+  end_time          String?          // End time in format "HH:MM AM/PM"
   custom_properties Json?            // For segment-specific properties
   created_at        DateTime         @default(now())
   updated_at        DateTime         @updatedAt

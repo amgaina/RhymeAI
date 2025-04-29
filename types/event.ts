@@ -43,7 +43,6 @@ export interface ScriptSegment {
   id: number;
   type: string;
   content: string;
-  audio?: string | null;
   audio_url?: string | null; // Added to match database field
   status: ScriptSegmentStatus;
   order: number;

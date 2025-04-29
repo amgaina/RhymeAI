@@ -1,10 +1,23 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardFooter,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Play, Pause, Volume2, Loader2 } from "lucide-react";
@@ -13,25 +26,31 @@ import useTextToSpeech from "@/hooks/useTextToSpeech";
 
 export default function TTSPlayground() {
   // State for text input
-  const [text, setText] = useState<string>("Hello! This is a test of the text-to-speech functionality.");
-  
+  const [text, setText] = useState<string>(
+    "Hello! This is a test of the text-to-speech functionality."
+  );
+
   // State for voice settings
   const [voiceGender, setVoiceGender] = useState<string>("FEMALE");
   const [voiceName, setVoiceName] = useState<string>("en-US-Neural2-F");
   const [speakingRate, setSpeakingRate] = useState<number>(1.0);
   const [pitch, setPitch] = useState<number>(0);
-  
+
   // State for audio playback
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Audio element reference
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  
+
   // Browser TTS fallback
-  const { speakText, stopSpeaking, isPlaying: isBrowserTtsPlaying } = useTextToSpeech();
+  const {
+    speakText,
+    stopSpeaking,
+    isPlaying: isBrowserTtsPlaying,
+  } = useTextToSpeech();
 
   // Handle text change
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -63,15 +82,15 @@ export default function TTSPlayground() {
 
       if (result.success && result.audioUrl) {
         setAudioUrl(result.audioUrl);
-        
+
         // Create a new audio element
         if (audioRef.current) {
           audioRef.current.pause();
         }
-        
+
         const audio = new Audio(result.audioUrl);
         audioRef.current = audio;
-        
+
         // Set up event listeners
         audio.onplay = () => setIsPlaying(true);
         audio.onpause = () => setIsPlaying(false);
@@ -103,7 +122,7 @@ export default function TTSPlayground() {
       if (isPlaying) {
         audioRef.current.pause();
       } else {
-        audioRef.current.play().catch(err => {
+        audioRef.current.play().catch((err) => {
           console.error("Error playing audio:", err);
           // Fall back to browser TTS
           speakText(text, { rate: speakingRate, pitch });
@@ -113,14 +132,14 @@ export default function TTSPlayground() {
       // Create a new audio element if it doesn't exist
       const audio = new Audio(audioUrl);
       audioRef.current = audio;
-      
+
       // Set up event listeners
       audio.onplay = () => setIsPlaying(true);
       audio.onpause = () => setIsPlaying(false);
       audio.onended = () => setIsPlaying(false);
-      
+
       // Play the audio
-      audio.play().catch(err => {
+      audio.play().catch((err) => {
         console.error("Error playing audio:", err);
         // Fall back to browser TTS
         speakText(text, { rate: speakingRate, pitch });
@@ -136,7 +155,7 @@ export default function TTSPlayground() {
           Enter text and generate audio using Google Cloud Text-to-Speech
         </CardDescription>
       </CardHeader>
-      
+
       <CardContent className="space-y-6">
         {/* Text input */}
         <div className="space-y-2">
@@ -150,7 +169,7 @@ export default function TTSPlayground() {
             className="resize-y"
           />
         </div>
-        
+
         {/* Voice settings */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -166,7 +185,7 @@ export default function TTSPlayground() {
               </SelectContent>
             </Select>
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="voice-name">Voice Name</Label>
             <Select value={voiceName} onValueChange={setVoiceName}>
@@ -174,32 +193,46 @@ export default function TTSPlayground() {
                 <SelectValue placeholder="Select voice" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="en-US-Neural2-F">US English (Female)</SelectItem>
-                <SelectItem value="en-US-Neural2-M">US English (Male)</SelectItem>
-                <SelectItem value="en-GB-Neural2-F">British English (Female)</SelectItem>
-                <SelectItem value="en-GB-Neural2-M">British English (Male)</SelectItem>
-                <SelectItem value="en-AU-Neural2-F">Australian English (Female)</SelectItem>
-                <SelectItem value="en-AU-Neural2-M">Australian English (Male)</SelectItem>
+                <SelectItem value="en-US-Neural2-F">
+                  US English (Female)
+                </SelectItem>
+                <SelectItem value="en-US-Neural2-M">
+                  US English (Male)
+                </SelectItem>
+                <SelectItem value="en-GB-Neural2-F">
+                  British English (Female)
+                </SelectItem>
+                <SelectItem value="en-GB-Neural2-M">
+                  British English (Male)
+                </SelectItem>
+                <SelectItem value="en-AU-Neural2-F">
+                  Australian English (Female)
+                </SelectItem>
+                <SelectItem value="en-AU-Neural2-M">
+                  Australian English (Male)
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
-        
+
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="flex justify-between">
-              <Label htmlFor="speaking-rate">Speaking Rate: {speakingRate.toFixed(1)}</Label>
+              <Label htmlFor="speaking-rate">
+                Speaking Rate: {speakingRate.toFixed(1)}
+              </Label>
             </div>
             <Slider
               id="speaking-rate"
-              min={0.5}
+              min={0.25}
               max={2.0}
               step={0.1}
               value={[speakingRate]}
               onValueChange={(value) => setSpeakingRate(value[0])}
             />
           </div>
-          
+
           <div className="space-y-2">
             <div className="flex justify-between">
               <Label htmlFor="pitch">Pitch: {pitch.toFixed(1)}</Label>
@@ -214,12 +247,10 @@ export default function TTSPlayground() {
             />
           </div>
         </div>
-        
+
         {/* Error message */}
-        {error && (
-          <div className="text-red-500 text-sm">{error}</div>
-        )}
-        
+        {error && <div className="text-red-500 text-sm">{error}</div>}
+
         {/* Audio player (if audio is generated) */}
         {audioUrl && (
           <div className="mt-4 p-4 bg-muted rounded-md">
@@ -231,7 +262,11 @@ export default function TTSPlayground() {
                   onClick={handlePlayPause}
                   disabled={isGenerating}
                 >
-                  {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  {isPlaying ? (
+                    <Pause className="h-4 w-4" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
                 </Button>
                 <Volume2 className="h-4 w-4 text-muted-foreground" />
               </div>
@@ -242,7 +277,7 @@ export default function TTSPlayground() {
           </div>
         )}
       </CardContent>
-      
+
       <CardFooter className="flex justify-between">
         <Button
           variant="outline"
@@ -257,7 +292,7 @@ export default function TTSPlayground() {
         >
           Clear
         </Button>
-        
+
         <Button
           onClick={handleGenerateTTS}
           disabled={isGenerating || !text.trim()}

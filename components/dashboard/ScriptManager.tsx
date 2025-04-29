@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,6 +22,7 @@ import {
   Trash2,
   Sparkles,
   Loader2,
+  Volume2,
 } from "lucide-react";
 import DOMBasedAudioPlayer from "./DOMBasedAudioPlayer";
 import { ScriptSegment } from "@/types/event";
@@ -184,6 +185,7 @@ export default function ScriptManager({
                   )}
                 </Button>
               )}
+
               {onRegenerateAll && (
                 <Button
                   size="sm"
@@ -255,7 +257,7 @@ export default function ScriptManager({
                     )}
                   </h3>
                   <div className="flex gap-2">
-                    {(segment.audio || segment.audio_url) && (
+                    {segment.audio_url && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -364,10 +366,7 @@ export default function ScriptManager({
         <DOMBasedAudioPlayer
           title={`Preview: ${selectedSegmentForPreview.type}`}
           scriptText={selectedSegmentForPreview.content}
-          audioUrl={
-            selectedSegmentForPreview.audio_url ||
-            selectedSegmentForPreview.audio
-          }
+          audioS3key={selectedSegmentForPreview.audio_url}
           segmentId={selectedSegmentForPreview.id} // Pass the segment ID for presigned URL
           segmentIndex={findSegmentIndex(selectedSegmentForPreview.id)}
           totalSegments={segments.length}

@@ -89,7 +89,7 @@ export async function generateAIEventLayout(eventId: string) {
 
     // Call AI to generate layout
     const { text: layoutResponse } = await generateText({
-      model: google("gemini-pro", {}),
+      model: google("gemini-2.0-pro-exp-02-05", {}),
       messages: [
         {
           role: "system",
@@ -142,7 +142,37 @@ export async function generateAIEventLayout(eventId: string) {
     }
 
     // Create layout segments with proper IDs and structure
-    const layoutSegments: LayoutSegment[] = layoutData.segments.map(
+    // First, sort segments by order to ensure correct time calculation
+    const sortedSegments = [...layoutData.segments].sort(
+      (a, b) => (a.order || 0) - (b.order || 0)
+    );
+
+    // Calculate start time for the event
+    let eventStartTime: Date | null = null;
+    if (event.start_time) {
+      // If we have an explicit start time, use it
+      eventStartTime = new Date(event.event_date);
+      eventStartTime.setHours(event.start_time.getHours());
+      eventStartTime.setMinutes(event.start_time.getMinutes());
+    } else {
+      // Default to 9:00 AM if no start time is provided
+      eventStartTime = new Date(event.event_date);
+      eventStartTime.setHours(9, 0, 0);
+    }
+
+    // Format time function
+    const formatTime = (date: Date): string => {
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const ampm = hours >= 12 ? "PM" : "AM";
+      const formattedHours = hours % 12 || 12;
+      return `${formattedHours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+    };
+
+    // Calculate start and end times for each segment
+    let currentTime = new Date(eventStartTime);
+
+    const layoutSegments: LayoutSegment[] = sortedSegments.map(
       (segment, index) => {
         // Calculate segment duration if not provided
         let segmentDuration = segment.duration;
@@ -153,6 +183,32 @@ export async function generateAIEventLayout(eventId: string) {
           );
         }
 
+        // Get start time from custom properties or use calculated time
+        let startTime = "";
+        let endTime = "";
+
+        // Check if segment has explicit start/end times in custom properties
+        if (segment.custom_properties && segment.custom_properties.start_time) {
+          startTime = segment.custom_properties.start_time;
+        } else {
+          // Use calculated time
+          startTime = formatTime(currentTime);
+        }
+
+        // Calculate end time
+        const endTimeDate = new Date(currentTime);
+        endTimeDate.setMinutes(endTimeDate.getMinutes() + segmentDuration);
+
+        if (segment.custom_properties && segment.custom_properties.end_time) {
+          endTime = segment.custom_properties.end_time;
+        } else {
+          // Use calculated time
+          endTime = formatTime(endTimeDate);
+        }
+
+        // Update current time for next segment
+        currentTime = new Date(endTimeDate);
+
         return {
           id: uuidv4(),
           name: segment.name,
@@ -160,6 +216,8 @@ export async function generateAIEventLayout(eventId: string) {
           description: segment.description || `${segment.name} segment`,
           duration: segmentDuration,
           order: segment.order || index + 1,
+          startTime,
+          endTime,
           customProperties: segment.custom_properties || {},
         };
       }
@@ -204,8 +262,15 @@ export async function generateAIEventLayout(eventId: string) {
 
     // Create new segments
     const createdSegments = await Promise.all(
-      layoutSegments.map((segment) =>
-        db.layout_segments.create({
+      layoutSegments.map((segment) => {
+        // Store start and end times in custom_properties
+        const customProps = {
+          ...segment.customProperties,
+          start_time: segment.startTime || null,
+          end_time: segment.endTime || null,
+        };
+
+        return db.layout_segments.create({
           data: {
             layout_id: layout.id,
             name: segment.name,
@@ -213,10 +278,10 @@ export async function generateAIEventLayout(eventId: string) {
             description: segment.description,
             duration: segment.duration,
             order: segment.order,
-            custom_properties: segment.customProperties || {},
+            custom_properties: customProps,
           },
-        })
-      )
+        });
+      })
     );
 
     // Also store the layout as JSON for backward compatibility
@@ -243,14 +308,22 @@ export async function generateAIEventLayout(eventId: string) {
     revalidatePath(`/event/${eventId}`);
 
     // Map the database segments to the expected format
-    const formattedSegments = createdSegments.map((segment) => ({
-      id: segment.id,
-      name: segment.name,
-      type: segment.type as SegmentType,
-      description: segment.description,
-      duration: segment.duration,
-      order: segment.order,
-    }));
+    const formattedSegments = createdSegments.map((segment) => {
+      // Extract start and end times from custom_properties
+      const customProps =
+        (segment.custom_properties as Record<string, any>) || {};
+
+      return {
+        id: segment.id,
+        name: segment.name,
+        type: segment.type as SegmentType,
+        description: segment.description,
+        duration: segment.duration,
+        order: segment.order,
+        startTime: customProps.start_time || "",
+        endTime: customProps.end_time || "",
+      };
+    });
 
     // Create the response layout with the actual segments from the database
     const responseLayout: EventLayout = {

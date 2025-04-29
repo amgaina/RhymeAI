@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { DashboardLink } from "@/components/DashboardLink";
 import PlaygroundLink from "@/components/PlaygroundLink";
 import { Toaster } from "@/components/ui/toaster";
+import { ChatUIContainer } from "@/components/chat/ChatUIContainer";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -117,6 +118,7 @@ export default function RootLayout({
             {/* Main Content */}
             <main>{children}</main>
             <Toaster />
+            <ChatUIContainer useDialog={false} />
           </ThemeProvider>
         </body>
       </html>

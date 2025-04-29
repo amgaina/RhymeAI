@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatToolDisplay } from "./ChatToolDisplay";
+import { transformChatContent } from "@/lib/chat-message-utils";
 
 interface ChatMessageProps {
   message: any;
@@ -83,7 +84,14 @@ export function ChatMessage({ message, eventId }: ChatMessageProps) {
                 return (
                   <div key={index} className="whitespace-pre-wrap text-sm">
                     {typeof part.text === "string" ? (
-                      <ChatMarkdown content={part.text} />
+                      <>
+                        <ChatMarkdown content={part.text} />
+                        {transformChatContent(
+                          part.text,
+                          message.toolInvocations,
+                          message.eventId
+                        )}
+                      </>
                     ) : (
                       <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto">
                         {JSON.stringify(part.text, null, 2)}
@@ -100,7 +108,14 @@ export function ChatMessage({ message, eventId }: ChatMessageProps) {
             message.content && (
               <div className="whitespace-pre-wrap text-sm">
                 {typeof message.content === "string" ? (
-                  <ChatMarkdown content={message.content} />
+                  <>
+                    <ChatMarkdown content={message.content} />
+                    {transformChatContent(
+                      message.content,
+                      message.toolInvocations,
+                      message.eventId
+                    )}
+                  </>
                 ) : (
                   <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto">
                     {JSON.stringify(message.content, null, 2)}

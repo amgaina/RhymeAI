@@ -46,11 +46,17 @@ export async function generateEventLayout(eventId: string) {
     }
 
     // Generate layout segments based on event type
-    const layoutSegments = generateLayoutByEventType(
+    let layoutSegments = generateLayoutByEventType(
       event.event_type as EventType,
       event.title,
       totalDuration
     );
+
+    // Calculate start and end times for each segment
+    const startTime = event.start_time
+      ? new Date(event.start_time)
+      : new Date();
+    layoutSegments = calculateSegmentTimes(layoutSegments, startTime);
 
     // Create the full event layout structure
     const eventLayout: EventLayout = {

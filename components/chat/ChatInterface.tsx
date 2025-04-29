@@ -276,7 +276,16 @@ export function ChatInterface({
             messageId: message.id,
             role: "assistant",
             content: message.content,
-            toolCalls: message.toolInvocations || undefined,
+            // Extract tool calls safely
+            toolCalls: (() => {
+              if ((message as any).toolCalls) {
+                return (message as any).toolCalls;
+              } else if ((message as any).toolInvocations) {
+                // Using toolInvocations which is deprecated but still present in some messages
+                return (message as any).toolInvocations;
+              }
+              return undefined;
+            })(),
           });
         }
       } catch (e) {
@@ -544,7 +553,8 @@ export function ChatInterface({
         });
       }
 
-      await handleSubmit(e);
+      // Call handleSubmit - note that it may not return a Promise
+      handleSubmit(e);
     } catch (err) {
       console.error("Error submitting message:", err);
       setError("Failed to send message. Please try again.");
@@ -620,35 +630,72 @@ export function ChatInterface({
   // Sync chat messages to the database periodically or when component unmounts
   useEffect(() => {
     let syncInterval: NodeJS.Timeout;
+    let isMounted = true;
+
+    // Store a reference to the current messages to avoid unnecessary syncs
+    const messagesRef = useRef(messages);
+    messagesRef.current = messages;
 
     // Function to sync all messages that might not be in the database
     const syncAllMessages = async () => {
-      if (createdEventId && messages.length > 0) {
+      // Skip if component is unmounted or no event ID
+      if (!isMounted || !createdEventId) return;
+
+      const currentMessages = messagesRef.current;
+      if (currentMessages.length === 0) return;
+
+      try {
         // Filter and convert messages to the format expected by syncChatMessages
-        const chatMessagesToSync = messages
+        const chatMessagesToSync = currentMessages
           .filter((msg) => msg.role === "user" || msg.role === "assistant")
-          .map((msg) => ({
-            id: msg.id,
-            role: msg.role as "user" | "assistant",
-            content: msg.content,
-            toolCalls: msg.toolInvocations || undefined,
-          }));
+          .map((msg) => {
+            // Extract tool calls safely without TypeScript warnings
+            let toolCalls;
+            if ((msg as any).toolCalls) {
+              toolCalls = (msg as any).toolCalls;
+            } else if ((msg as any).toolInvocations) {
+              toolCalls = (msg as any).toolInvocations;
+            }
+
+            return {
+              id: msg.id,
+              role: msg.role as "user" | "assistant",
+              content: msg.content,
+              toolCalls: toolCalls,
+            };
+          });
 
         await syncChatMessages(createdEventId, chatMessagesToSync);
+      } catch (error) {
+        console.error("Error syncing chat messages:", error);
       }
     };
 
-    // Set up periodic sync (every 30 seconds)
+    // Set up periodic sync (every 60 seconds instead of 30)
     if (createdEventId) {
-      syncInterval = setInterval(syncAllMessages, 30000);
+      // Initial sync after a short delay to avoid rapid syncs during initialization
+      const initialSyncTimeout = setTimeout(() => {
+        if (isMounted) syncAllMessages();
+      }, 5000);
+
+      // Regular sync interval
+      syncInterval = setInterval(syncAllMessages, 60000);
+
+      // Clean up function
+      return () => {
+        isMounted = false;
+        clearTimeout(initialSyncTimeout);
+        clearInterval(syncInterval);
+
+        // Final sync on unmount (don't await to avoid blocking unmount)
+        syncAllMessages().catch(console.error);
+      };
     }
 
-    // Sync when component unmounts
     return () => {
-      clearInterval(syncInterval);
-      syncAllMessages();
+      isMounted = false;
     };
-  }, [createdEventId, messages]);
+  }, [createdEventId]); // Only depend on createdEventId, not messages
 
   // Calculate progress percentage
   const progressPercentage = eventContext?.requiredFields?.length

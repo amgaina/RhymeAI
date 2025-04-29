@@ -66,6 +66,8 @@ CREATE TABLE "layout_segments" (
     "description" TEXT NOT NULL,
     "duration" INTEGER NOT NULL,
     "order" INTEGER NOT NULL,
+    "start_time" TEXT,
+    "end_time" TEXT,
     "custom_properties" JSONB,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,

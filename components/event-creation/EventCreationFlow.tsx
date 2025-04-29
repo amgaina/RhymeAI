@@ -2,6 +2,7 @@
 import { useState } from "react";
 import {
   createEvent,
+  updateEvent,
   generateEventLayout,
   generateScriptFromLayout,
   updateEventLayoutSegment,
@@ -9,9 +10,15 @@ import {
   deleteLayoutSegment,
   finalizeEvent,
 } from "@/app/actions/event";
+import { generateTTSForAllSegments } from "@/app/actions/event/tts-generation";
 import { EventLayout, LayoutSegment } from "@/types/layout";
 import { ScriptSegment } from "@/types/event";
 import { useToast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
+import {
+  showToolProcessingToast,
+  updateToolProcessingToast,
+} from "@/lib/toast-utils";
 import { EventDetailsStep } from "./steps/EventDetailsStep";
 import { EventLayoutStep } from "./steps/EventLayoutStep";
 import { ScriptGenerationStep } from "./steps/ScriptGenerationStep";
@@ -23,6 +30,17 @@ type FlowStep =
   | "event_layout"
   | "script_generation"
   | "finalize";
+
+// Helper function to validate date string format (YYYY-MM-DD)
+const isValidDateString = (dateString: string): boolean => {
+  // Check if the string matches the YYYY-MM-DD format
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(dateString)) return false;
+
+  // Check if the date is valid
+  const date = new Date(dateString);
+  return !isNaN(date.getTime());
+};
 
 export default function EventCreationFlow() {
   const { toast } = useToast();
@@ -41,6 +59,7 @@ export default function EventCreationFlow() {
   // State for script data
   const [scriptSegments, setScriptSegments] = useState<ScriptSegment[]>([]);
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+  const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
   const [selectedSegment, setSelectedSegment] = useState<ScriptSegment | null>(
     null
   );
@@ -58,76 +77,191 @@ export default function EventCreationFlow() {
 
     console.log("Event data received:", data);
 
-    // Check if the data already contains an eventId (created by AI tool)
-    if (data.eventId) {
-      console.log("Event already created by AI tool with ID:", data.eventId);
-
-      // Update state with the event ID from the AI tool
-      setEventId(data.eventId);
-      setEventData(data);
-      setProgress(25);
-
-      toast({
-        title: "Event details collected!",
-        description: "You can now proceed to create a layout for your event.",
-      });
-
-      return;
-    }
-
+    // Store the data in state regardless of what happens next
     setEventData(data);
     setProgress(25);
 
-    // If we already have an eventId, we're updating an existing event
-    // This happens when going back from layout to details
-    if (eventId) {
-      // We'll handle the update in the EventDetailsStep component
-      // Don't automatically move to the next step - let the user decide
+    // Show navigation options instead of automatically creating/updating event
+    setShowNavigationOptions(true);
+  };
+
+  // State to control navigation options visibility
+  const [showNavigationOptions, setShowNavigationOptions] = useState(false);
+
+  // Function to actually create or update the event when user chooses to proceed
+  const handleCreateOrUpdateEvent = async () => {
+    if (!eventData) {
+      console.error("No event data available");
       return;
     }
 
-    // Create FormData object for the server action
-    const formData = new FormData();
-    formData.append("eventName", data.eventName || "");
-    formData.append("eventType", data.eventType || "");
-    formData.append(
-      "eventDate",
-      data.eventDate || new Date().toISOString().split("T")[0]
-    );
+    setShowNavigationOptions(false);
 
-    if (data.eventLocation)
-      formData.append("eventLocation", data.eventLocation);
-    if (data.audienceSize)
-      formData.append("expectedAttendees", data.audienceSize);
-    if (data.eventDescription)
-      formData.append("eventDescription", data.eventDescription);
-    if (data.language) formData.append("language", data.language);
+    // If we already have an eventId, we're updating an existing event
+    if (eventId) {
+      await updateExistingEvent();
+    } else {
+      // Only create a new event if we don't have an eventId yet
+      await createNewEvent();
+    }
+  };
+
+  // Update an existing event
+  const updateExistingEvent = async () => {
+    if (!eventId || !eventData) return;
+
+    console.log("Updating existing event with ID:", eventId);
+
+    // Create FormData object for the update
+    const formData = new FormData();
+    formData.append("eventId", eventId.toString());
+    formData.append("eventName", eventData.eventName || "");
+    formData.append("eventType", eventData.eventType || "");
+    // Ensure we have a valid date format (YYYY-MM-DD)
+    let eventDate = eventData.eventDate;
+
+    // If no date is provided or it's in an invalid format, use today's date
+    if (!eventDate || !isValidDateString(eventDate)) {
+      eventDate = new Date().toISOString().split("T")[0];
+      console.log("Using default date:", eventDate);
+    }
+
+    formData.append("eventDate", eventDate);
+
+    if (eventData.eventLocation)
+      formData.append("eventLocation", eventData.eventLocation);
+    if (eventData.audienceSize)
+      formData.append("expectedAttendees", eventData.audienceSize);
+    if (eventData.eventDescription)
+      formData.append("eventDescription", eventData.eventDescription);
+    if (eventData.language) formData.append("language", eventData.language);
 
     // Voice settings
-    if (data.voicePreference?.gender)
-      formData.append("voiceGender", data.voicePreference.gender);
-    if (data.voicePreference?.tone)
-      formData.append("voiceType", data.voicePreference.tone);
-    if (data.voicePreference?.accent)
-      formData.append("accent", data.voicePreference.accent);
-    if (data.voicePreference?.speed)
+    if (eventData.voicePreference?.gender)
+      formData.append("voiceGender", eventData.voicePreference.gender);
+    if (eventData.voicePreference?.tone)
+      formData.append("voiceType", eventData.voicePreference.tone);
+    if (eventData.voicePreference?.accent)
+      formData.append("accent", eventData.voicePreference.accent);
+    if (eventData.voicePreference?.speed)
       formData.append(
         "speakingRate",
-        data.voicePreference.speed === "fast"
+        eventData.voicePreference.speed === "fast"
           ? "80"
-          : data.voicePreference.speed === "slow"
+          : eventData.voicePreference.speed === "slow"
           ? "20"
           : "50"
       );
-    if (data.voicePreference?.pitch)
+    if (eventData.voicePreference?.pitch)
       formData.append(
         "pitch",
-        data.voicePreference.pitch === "high"
+        eventData.voicePreference.pitch === "high"
           ? "80"
-          : data.voicePreference.pitch === "low"
+          : eventData.voicePreference.pitch === "low"
           ? "20"
           : "50"
       );
+
+    // Show processing toast
+    showToolProcessingToast(
+      "updateEvent",
+      "Updating event details. This may take a moment..."
+    );
+
+    try {
+      setIsLoading(true);
+      // Use updateEvent instead of createEvent
+      const result = await updateEvent(formData);
+
+      if (result.success) {
+        // Update toast with success
+        updateToolProcessingToast(
+          "updateEvent",
+          true,
+          "Your event details have been updated successfully."
+        );
+      } else {
+        // Update toast with error
+        updateToolProcessingToast(
+          "updateEvent",
+          false,
+          result.error || "There was a problem updating your event."
+        );
+      }
+    } catch (error) {
+      console.error("Error updating event:", error);
+
+      // Update toast with error
+      updateToolProcessingToast(
+        "updateEvent",
+        false,
+        "Failed to update event. Please try again."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Create a new event
+  const createNewEvent = async () => {
+    if (!eventData) return;
+
+    console.log("Creating new event...");
+
+    // Create FormData object for the server action
+    const formData = new FormData();
+    formData.append("eventName", eventData.eventName || "");
+    formData.append("eventType", eventData.eventType || "");
+    // Ensure we have a valid date format (YYYY-MM-DD)
+    let eventDate = eventData.eventDate;
+
+    // If no date is provided or it's in an invalid format, use today's date
+    if (!eventDate || !isValidDateString(eventDate)) {
+      eventDate = new Date().toISOString().split("T")[0];
+      console.log("Using default date:", eventDate);
+    }
+
+    formData.append("eventDate", eventDate);
+
+    if (eventData.eventLocation)
+      formData.append("eventLocation", eventData.eventLocation);
+    if (eventData.audienceSize)
+      formData.append("expectedAttendees", eventData.audienceSize);
+    if (eventData.eventDescription)
+      formData.append("eventDescription", eventData.eventDescription);
+    if (eventData.language) formData.append("language", eventData.language);
+
+    // Voice settings
+    if (eventData.voicePreference?.gender)
+      formData.append("voiceGender", eventData.voicePreference.gender);
+    if (eventData.voicePreference?.tone)
+      formData.append("voiceType", eventData.voicePreference.tone);
+    if (eventData.voicePreference?.accent)
+      formData.append("accent", eventData.voicePreference.accent);
+    if (eventData.voicePreference?.speed)
+      formData.append(
+        "speakingRate",
+        eventData.voicePreference.speed === "fast"
+          ? "80"
+          : eventData.voicePreference.speed === "slow"
+          ? "20"
+          : "50"
+      );
+    if (eventData.voicePreference?.pitch)
+      formData.append(
+        "pitch",
+        eventData.voicePreference.pitch === "high"
+          ? "80"
+          : eventData.voicePreference.pitch === "low"
+          ? "20"
+          : "50"
+      );
+
+    // Show processing toast
+    showToolProcessingToast(
+      "createEvent",
+      "Creating new event. This may take a moment..."
+    );
 
     try {
       setIsLoading(true);
@@ -136,31 +270,34 @@ export default function EventCreationFlow() {
       if (result.success && result.eventId) {
         // Store the event ID
         const newEventId = result.eventId;
+        console.log("New event created with ID:", newEventId);
 
         // Update state
         setEventId(newEventId);
-        toast({
-          title: "Event created successfully!",
-          description: "You can now proceed to create a layout for your event.",
-        });
 
-        // Don't automatically move to the next step or generate layout
-        // Let the user decide when to proceed
+        // Update toast with success
+        updateToolProcessingToast(
+          "createEvent",
+          true,
+          "Event created successfully! You can now proceed to create a layout for your event."
+        );
       } else {
-        toast({
-          title: "Error creating event",
-          description:
-            result.error || "There was a problem creating your event.",
-          variant: "destructive",
-        });
+        // Update toast with error
+        updateToolProcessingToast(
+          "createEvent",
+          false,
+          result.error || "There was a problem creating your event."
+        );
       }
     } catch (error) {
       console.error("Error creating event:", error);
-      toast({
-        title: "Error",
-        description: "Failed to create event. Please try again.",
-        variant: "destructive",
-      });
+
+      // Update toast with error
+      updateToolProcessingToast(
+        "createEvent",
+        false,
+        "Failed to create event. Please try again."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -175,6 +312,12 @@ export default function EventCreationFlow() {
 
     console.log("Generating layout for event ID:", id);
 
+    // Show processing toast
+    showToolProcessingToast(
+      "generateLayout",
+      "Generating event layout based on your event details. This may take a moment..."
+    );
+
     try {
       setIsGeneratingLayout(true);
       console.log("Calling generateEventLayout with ID:", id);
@@ -184,27 +327,34 @@ export default function EventCreationFlow() {
       if (result.success && result.layout) {
         setEventLayout(result.layout);
         setProgress(50);
-        toast({
-          title: "Layout generated!",
-          description: "Review and customize the layout for your event.",
-        });
+
+        // Update toast with success
+        updateToolProcessingToast(
+          "generateLayout",
+          true,
+          "Layout generated successfully! Review and customize the layout for your event."
+        );
       } else {
         console.error("Error in layout generation result:", result.error);
-        toast({
-          title: "Error generating layout",
-          description: result.error || "Failed to generate event layout.",
-          variant: "destructive",
-        });
+
+        // Update toast with error
+        updateToolProcessingToast(
+          "generateLayout",
+          false,
+          result.error || "Failed to generate event layout."
+        );
       }
     } catch (error) {
       console.error("Error generating layout:", error);
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      toast({
-        title: "Error generating layout",
-        description: `Failed to generate layout: ${errorMessage}. Please try again.`,
-        variant: "destructive",
-      });
+
+      // Update toast with error
+      updateToolProcessingToast(
+        "generateLayout",
+        false,
+        `Failed to generate layout: ${errorMessage}. Please try again.`
+      );
     } finally {
       setIsGeneratingLayout(false);
     }
@@ -366,6 +516,12 @@ export default function EventCreationFlow() {
   const handleGenerateScript = async () => {
     if (!eventId) return;
 
+    // Show processing toast
+    showToolProcessingToast(
+      "generateScript",
+      "Generating script based on your event layout. This may take a moment..."
+    );
+
     try {
       setIsGeneratingScript(true);
       const result = await generateScriptFromLayout(eventId.toString());
@@ -387,24 +543,29 @@ export default function EventCreationFlow() {
         setProgress(75);
         setCurrentStep("script_generation");
 
-        toast({
-          title: "Script generated!",
-          description: "Review and edit the script segments for your event.",
-        });
+        // Update toast with success
+        updateToolProcessingToast(
+          "generateScript",
+          true,
+          "Script generated successfully! Review and edit the script segments for your event."
+        );
       } else {
-        toast({
-          title: "Error generating script",
-          description: result.error || "Failed to generate script from layout.",
-          variant: "destructive",
-        });
+        // Update toast with error
+        updateToolProcessingToast(
+          "generateScript",
+          false,
+          result.error || "Failed to generate script from layout."
+        );
       }
     } catch (error) {
       console.error("Error generating script:", error);
-      toast({
-        title: "Error",
-        description: "Failed to generate script. Please try again.",
-        variant: "destructive",
-      });
+
+      // Update toast with error
+      updateToolProcessingToast(
+        "generateScript",
+        false,
+        "Failed to generate script. Please try again."
+      );
     } finally {
       setIsGeneratingScript(false);
     }
@@ -444,7 +605,8 @@ export default function EventCreationFlow() {
             ? {
                 ...s,
                 status: "generated" as const,
-                audio: `mock-audio-url-${segmentId}.mp3`,
+                audio: `mock-audio-url-${segmentId}.mp3`, // For backward compatibility
+                audio_url: `audio/event-${eventId}/segment-${segmentId}.mp3`, // Store the S3 key for future use
               }
             : s
         )
@@ -465,9 +627,130 @@ export default function EventCreationFlow() {
     }
   };
 
-  // Finalize the event
+  // Generate TTS for all script segments
+  const handleGenerateAllTTS = async () => {
+    if (!eventId) return;
+
+    // Show processing toast
+    showToolProcessingToast(
+      "generateAllTTS",
+      "Generating audio for all script segments. This may take a moment..."
+    );
+
+    try {
+      setIsGeneratingTTS(true);
+      const result = await generateTTSForAllSegments(eventId.toString());
+
+      if (result.success) {
+        // Update script segments with audio URLs
+        if (result.results) {
+          const updatedSegments = scriptSegments.map((segment) => {
+            const updatedResult = result.results?.find(
+              (r: any) => r.segmentId === segment.id
+            );
+            if (updatedResult && updatedResult.success) {
+              return {
+                ...segment,
+                audio: updatedResult.audioUrl, // For backward compatibility
+                audio_url: updatedResult.s3Key, // Store the S3 key for future use
+                status: "generated" as const,
+              };
+            }
+            return segment;
+          });
+
+          setScriptSegments(updatedSegments);
+        }
+
+        // Update toast with success
+        updateToolProcessingToast(
+          "generateAllTTS",
+          true,
+          `Generated audio for ${
+            result.processedCount || "all"
+          } script segments.`
+        );
+      } else {
+        // Update toast with error
+        updateToolProcessingToast(
+          "generateAllTTS",
+          false,
+          result.error || "Failed to generate audio for script segments."
+        );
+      }
+    } catch (error) {
+      console.error("Error generating TTS:", error);
+
+      // Update toast with error
+      updateToolProcessingToast(
+        "generateAllTTS",
+        false,
+        "Failed to generate audio. Please try again."
+      );
+    } finally {
+      setIsGeneratingTTS(false);
+    }
+  };
+
+  // Finalize event without generating TTS
+  const handleFinalizeWithoutTTS = async () => {
+    if (!eventId) return;
+
+    // Show processing toast
+    showToolProcessingToast(
+      "finalizeWithoutTTS",
+      "Finalizing event without TTS generation. This may take a moment..."
+    );
+
+    try {
+      setIsLoading(true);
+      const result = await finalizeEvent(eventId.toString(), { skipTTS: true });
+
+      if (result.success) {
+        setProgress(100);
+
+        // Update toast with success
+        updateToolProcessingToast(
+          "finalizeWithoutTTS",
+          true,
+          "Your event has been successfully finalized without TTS generation."
+        );
+
+        // Redirect to the event page after a short delay to allow the toast to be seen
+        setTimeout(() => {
+          window.location.href = `/event/${eventId}`;
+        }, 1500);
+      } else {
+        // Update toast with error
+        updateToolProcessingToast(
+          "finalizeWithoutTTS",
+          false,
+          result.error || "Failed to finalize event."
+        );
+      }
+    } catch (error) {
+      console.error("Error finalizing event:", error);
+
+      // Update toast with error
+      updateToolProcessingToast(
+        "finalizeWithoutTTS",
+        false,
+        "Failed to finalize event. Please try again."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Finalize the event with TTS
   const handleFinalizeEvent = async () => {
     if (!eventId) return;
+
+    // Show processing toast
+    showToolProcessingToast(
+      "finalizeEvent",
+      "Finalizing event with TTS generation. This may take a moment..."
+    );
 
     try {
       setIsLoading(true);
@@ -475,28 +758,35 @@ export default function EventCreationFlow() {
 
       if (result.success) {
         setProgress(100);
-        toast({
-          title: "Event finalized!",
-          description:
-            "Your event has been successfully finalized and is ready for presentation.",
-        });
 
-        // Redirect to dashboard or event view
-        window.location.href = "/dashboard";
+        // Update toast with success
+        updateToolProcessingToast(
+          "finalizeEvent",
+          true,
+          "Your event has been successfully finalized and is ready for presentation."
+        );
+
+        // Redirect to the event page after a short delay to allow the toast to be seen
+        setTimeout(() => {
+          window.location.href = `/event/${eventId}`;
+        }, 1500);
       } else {
-        toast({
-          title: "Error finalizing event",
-          description: result.error || "Failed to finalize event.",
-          variant: "destructive",
-        });
+        // Update toast with error
+        updateToolProcessingToast(
+          "finalizeEvent",
+          false,
+          result.error || "Failed to finalize event."
+        );
       }
     } catch (error) {
       console.error("Error finalizing event:", error);
-      toast({
-        title: "Error",
-        description: "Failed to finalize event. Please try again.",
-        variant: "destructive",
-      });
+
+      // Update toast with error
+      updateToolProcessingToast(
+        "finalizeEvent",
+        false,
+        "Failed to finalize event. Please try again."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -516,6 +806,8 @@ export default function EventCreationFlow() {
     }
   };
 
+  // Navigation options are directly rendered in the JSX below
+
   // Render the current step
   const renderCurrentStep = () => {
     switch (currentStep) {
@@ -526,7 +818,10 @@ export default function EventCreationFlow() {
             eventData={eventData}
             isLoading={isLoading}
             onEventDataCollected={handleEventDataCollected}
-            onContinue={() => navigateToStep("event_layout")}
+            onContinue={() => {
+              handleCreateOrUpdateEvent();
+              navigateToStep("event_layout");
+            }}
             isEditMode={!!eventId} // Set edit mode if we have an eventId (coming back from layout)
           />
         );
@@ -573,7 +868,10 @@ export default function EventCreationFlow() {
             eventLayout={eventLayout}
             scriptSegments={scriptSegments}
             isLoading={isLoading}
+            isGeneratingTTS={isGeneratingTTS}
             onFinalizeEvent={handleFinalizeEvent}
+            onFinalizeWithoutTTS={handleFinalizeWithoutTTS}
+            onGenerateAllTTS={handleGenerateAllTTS}
             onBack={() => navigateToStep("script_generation")}
             onGoToDetails={() => navigateToStep("event_details")}
           />
@@ -735,6 +1033,55 @@ export default function EventCreationFlow() {
 
       {/* Current step content */}
       <div className="mt-8">{renderCurrentStep()}</div>
+
+      {/* Navigation options dialog */}
+      {showNavigationOptions && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg max-w-md w-full">
+            <h3 className="text-lg font-medium mb-4">
+              Event Details Collected
+            </h3>
+            <p className="mb-6 text-muted-foreground">
+              Your event details have been collected. What would you like to do
+              next?
+            </p>
+
+            <div className="flex flex-col space-y-3">
+              <Button
+                onClick={() => {
+                  handleCreateOrUpdateEvent();
+                  setShowNavigationOptions(false);
+                }}
+                className="w-full"
+              >
+                Save Event Details
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => {
+                  handleCreateOrUpdateEvent();
+                  setShowNavigationOptions(false);
+                  navigateToStep("event_layout");
+                }}
+                className="w-full"
+              >
+                Save and Go to Layout
+              </Button>
+
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowNavigationOptions(false);
+                }}
+                className="w-full"
+              >
+                Continue Editing
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,7 +15,7 @@ import EventList, { EventItem } from "@/components/dashboard/EventList";
 import { useEvents } from "@/hooks/useEvents";
 
 export default function Dashboard() {
-  const { events, isLoading } = useEvents();
+  const { events, isLoading, isDeleting, deleteEvent } = useEvents();
 
   // Convert event data to event item format for EventList
   const eventItems: EventItem[] = events.map((event) => ({
@@ -197,6 +197,8 @@ export default function Dashboard() {
                   window.location.href = `/event/${eventId}`;
               }
             }}
+            onDeleteEvent={deleteEvent}
+            isDeleting={isDeleting}
             createEventLink={createEventLink}
           />
         )}

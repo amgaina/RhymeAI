@@ -109,16 +109,21 @@ export async function generateTTSForAllSegments(eventId: string) {
             }
 
             if (settings) {
-              // Extract and validate speaking rate (0.25 to 4.0)
-              speakingRate = settings.speakingRate || 1.0;
-              speakingRate = Math.max(0.25, Math.min(4.0, speakingRate));
+              // MC-like voice settings with more energy and presence
+
+              // Extract and validate speaking rate (0.25 to 2.0)
+              // Use a slightly faster rate for MC-style delivery (1.15-1.25 is good for MC)
+              speakingRate = settings.speakingRate || 1.2;
+              speakingRate = Math.max(0.25, Math.min(2.0, speakingRate));
 
               // Extract and validate pitch (-20.0 to 20.0)
-              pitch = settings.pitch || 0;
+              // Slightly higher pitch for more animated, engaging presentation
+              pitch = settings.pitch || 2.0;
               pitch = Math.max(-20.0, Math.min(20.0, pitch));
 
               // Extract and validate volume gain (-96.0 to 16.0)
-              volumeGainDb = settings.volumeGainDb || 0;
+              // Increase volume for better projection and presence
+              volumeGainDb = settings.volumeGainDb || 3.5;
               volumeGainDb = Math.max(-96.0, Math.min(16.0, volumeGainDb));
             }
           } catch (error) {
@@ -421,16 +426,21 @@ export async function generateTTSForSegment(segmentId: number) {
         }
 
         if (settings) {
-          // Extract and validate speaking rate (0.25 to 4.0)
-          speakingRate = settings.speakingRate || 1.0;
-          speakingRate = Math.max(0.25, Math.min(4.0, speakingRate));
+          // MC-like voice settings with more energy and presence
+
+          // Extract and validate speaking rate (0.25 to 2.0)
+          // Use a slightly faster rate for MC-style delivery (1.15-1.25 is good for MC)
+          speakingRate = settings.speakingRate || 1.2;
+          speakingRate = Math.max(0.25, Math.min(2.0, speakingRate));
 
           // Extract and validate pitch (-20.0 to 20.0)
-          pitch = settings.pitch || 0;
+          // Slightly higher pitch for more animated, engaging presentation
+          pitch = settings.pitch || 2.0;
           pitch = Math.max(-20.0, Math.min(20.0, pitch));
 
           // Extract and validate volume gain (-96.0 to 16.0)
-          volumeGainDb = settings.volumeGainDb || 0;
+          // Increase volume for better projection and presence
+          volumeGainDb = settings.volumeGainDb || 3.5;
           volumeGainDb = Math.max(-96.0, Math.min(16.0, volumeGainDb));
         }
       } catch (error) {

@@ -276,6 +276,91 @@ export async function createEvent(formData: FormData) {
   }
 }
 
+// Update an existing event
+export async function updateEvent(formData: FormData) {
+  try {
+    // Get user authentication
+    const { auth } = await import("@clerk/nextjs/server");
+    const userid = await auth();
+
+    if (!userid || !userid.userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    // Get the event ID from the form data
+    const eventId = formData.get("eventId");
+    if (!eventId) {
+      return { success: false, error: "Event ID is required" };
+    }
+
+    console.log("Updating event with ID:", eventId);
+
+    // Validate form data
+    const validatedFields = eventSchema.parse({
+      eventName: formData.get("eventName"),
+      eventType: formData.get("eventType"),
+      eventDate: formData.get("eventDate"),
+      eventLocation: formData.get("eventLocation"),
+      expectedAttendees: formData.get("expectedAttendees"),
+      eventDescription: formData.get("eventDescription"),
+      language: formData.get("language"),
+      voiceGender: formData.get("voiceGender"),
+      voiceType: formData.get("voiceType"),
+      accent: formData.get("accent"),
+      speakingRate: formData.get("speakingRate"),
+      pitch: formData.get("pitch"),
+    });
+
+    // Update event in database
+    const event = await db.events.update({
+      where: {
+        event_id: parseInt(eventId.toString()),
+        user_id: userid.userId, // Ensure the user can only update their own events
+      },
+      data: {
+        title: validatedFields.eventName,
+        event_type: validatedFields.eventType,
+        event_date: new Date(validatedFields.eventDate),
+        location: validatedFields.eventLocation || null,
+        expected_attendees: validatedFields.expectedAttendees
+          ? parseInt(validatedFields.expectedAttendees)
+          : null,
+        description: validatedFields.eventDescription || null,
+        language: validatedFields.language || "English",
+        voice_settings: {
+          gender: validatedFields.voiceGender || "neutral",
+          voiceType: validatedFields.voiceType || "professional",
+          accent: validatedFields.accent || "american",
+          speakingRate:
+            validatedFields.speakingRate &&
+            validatedFields.speakingRate !== "null"
+              ? parseInt(validatedFields.speakingRate)
+              : 50,
+          pitch:
+            validatedFields.pitch && validatedFields.pitch !== "null"
+              ? parseInt(validatedFields.pitch)
+              : 50,
+        },
+        updated_at: new Date(),
+      },
+    });
+
+    revalidatePath("/dashboard");
+    console.log("Event updated successfully with ID:", event.event_id);
+    return {
+      success: true,
+      eventId: event.event_id,
+      message: "Event updated successfully",
+    };
+  } catch (error) {
+    console.error("Error updating event:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update event",
+    };
+  }
+}
+
 // Generate event layout based on event details
 export async function generateEventLayout(eventId: string) {
   console.log("generateEventLayout called with ID:", eventId);
@@ -487,9 +572,49 @@ export async function generateEventLayout(eventId: string) {
       },
     });
 
+    // Calculate start and end times for segments
+    let currentTime = new Date();
+    if (event.event_date) {
+      // Use event date as the base
+      currentTime = new Date(event.event_date);
+      // Default to 9:00 AM if no specific time
+      currentTime.setHours(9, 0, 0);
+    }
+
+    // Format time function
+    const formatTime = (date: Date): string => {
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const ampm = hours >= 12 ? "PM" : "AM";
+      const formattedHours = hours % 12 || 12;
+      return `${formattedHours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+    };
+
+    // Sort segments by order
+    const sortedSegments = [...segments].sort((a, b) => a.order - b.order);
+
+    // Calculate times for each segment
+    const segmentsWithTimes = sortedSegments.map((segment) => {
+      const startTime = formatTime(currentTime);
+
+      // Calculate end time
+      const endTimeDate = new Date(currentTime);
+      endTimeDate.setMinutes(endTimeDate.getMinutes() + segment.duration);
+      const endTime = formatTime(endTimeDate);
+
+      // Update current time for next segment
+      currentTime = new Date(endTimeDate);
+
+      return {
+        ...segment,
+        startTime,
+        endTime,
+      };
+    });
+
     // Create new segments
     const createdSegments = await Promise.all(
-      segments.map((segment) =>
+      segmentsWithTimes.map((segment) =>
         db.layout_segments.create({
           data: {
             layout_id: layout.id,
@@ -498,7 +623,10 @@ export async function generateEventLayout(eventId: string) {
             description: segment.description,
             duration: segment.duration,
             order: segment.order,
-            custom_properties: {},
+            custom_properties: {
+              start_time: segment.startTime,
+              end_time: segment.endTime,
+            },
           },
         })
       )
@@ -510,14 +638,25 @@ export async function generateEventLayout(eventId: string) {
       eventId: layout.event_id,
       totalDuration: layout.total_duration,
       lastUpdated: layout.updated_at.toISOString(),
-      segments: createdSegments.map((segment) => ({
-        id: segment.id.toString(),
-        name: segment.name,
-        type: segment.type as any,
-        description: segment.description,
-        duration: segment.duration,
-        order: segment.order,
-      })),
+      segments: createdSegments.map((segment, index) => {
+        // Extract start and end times from custom_properties
+        const customProps =
+          (segment.custom_properties as Record<string, any>) || {};
+
+        // Use the times we calculated earlier
+        const segmentWithTime = segmentsWithTimes[index];
+
+        return {
+          id: segment.id.toString(),
+          name: segment.name,
+          type: segment.type as any,
+          description: segment.description,
+          duration: segment.duration,
+          order: segment.order,
+          startTime: customProps.start_time || segmentWithTime?.startTime || "",
+          endTime: customProps.end_time || segmentWithTime?.endTime || "",
+        };
+      }),
     };
 
     console.log("Layout generated successfully:", formattedLayout.id);
@@ -538,6 +677,32 @@ export async function updateEventLayoutSegment(
   segment: LayoutSegment
 ) {
   try {
+    // First, get the existing segment to access its custom_properties
+    const existingSegment = await db.layout_segments.findUnique({
+      where: { id: segment.id },
+    });
+
+    if (!existingSegment) {
+      return { success: false, error: "Segment not found" };
+    }
+
+    // Parse existing custom properties
+    let customProps = {};
+    try {
+      customProps =
+        (existingSegment.custom_properties as Record<string, any>) || {};
+    } catch (e) {
+      console.warn("Error parsing custom properties:", e);
+    }
+
+    // Update custom properties with start and end times
+    const updatedCustomProps = {
+      ...customProps,
+      start_time: segment.startTime || null,
+      end_time: segment.endTime || null,
+    };
+
+    // Update the segment
     const updatedSegment = await db.layout_segments.update({
       where: { id: segment.id },
       data: {
@@ -546,6 +711,7 @@ export async function updateEventLayoutSegment(
         description: segment.description,
         duration: segment.duration,
         order: segment.order,
+        custom_properties: updatedCustomProps,
       },
     });
 
@@ -568,7 +734,14 @@ export async function updateEventLayoutSegment(
       data: { total_duration: totalDuration },
     });
 
-    return { success: true, segment: updatedSegment };
+    // Format the response to include start and end times
+    const formattedSegment = {
+      ...updatedSegment,
+      startTime: updatedCustomProps.start_time || "",
+      endTime: updatedCustomProps.end_time || "",
+    };
+
+    return { success: true, segment: formattedSegment };
   } catch (error) {
     console.error("Error updating segment:", error);
     return {
@@ -594,6 +767,12 @@ export async function addLayoutSegment(
       return { success: false, error: "Layout not found" };
     }
 
+    // Create custom properties with start and end times
+    const customProps = {
+      start_time: segment.startTime || null,
+      end_time: segment.endTime || null,
+    };
+
     // Create the new segment
     const newSegment = await db.layout_segments.create({
       data: {
@@ -603,6 +782,7 @@ export async function addLayoutSegment(
         description: segment.description,
         duration: segment.duration,
         order: segment.order,
+        custom_properties: customProps,
       },
     });
 
@@ -621,6 +801,8 @@ export async function addLayoutSegment(
         description: newSegment.description,
         duration: newSegment.duration,
         order: newSegment.order,
+        startTime: customProps.start_time || "",
+        endTime: customProps.end_time || "",
       },
     };
   } catch (error) {
@@ -724,7 +906,16 @@ export async function generateScriptFromLayout(eventId: string) {
           break;
 
         case "break":
-          scriptContent = `We'll now take a short break for ${layoutSegment.duration} minutes. Please feel free to stretch, grab a refreshment, and network with fellow attendees. We'll resume promptly at [INSERT TIME].`;
+          // Extract start and end times from custom_properties
+          const breakProps =
+            (layoutSegment.custom_properties as Record<string, any>) || {};
+          const breakEndTime = breakProps.end_time || "";
+
+          scriptContent = `We'll now take a short break for ${
+            layoutSegment.duration
+          } minutes. Please feel free to stretch, grab a refreshment, and network with fellow attendees. ${
+            breakEndTime ? `We'll resume promptly at ${breakEndTime}.` : ""
+          }`;
           break;
 
         case "conclusion":
@@ -732,19 +923,75 @@ export async function generateScriptFromLayout(eventId: string) {
           break;
 
         case "presentation":
-          scriptContent = `Next up, we have a presentation on ${layoutSegment.name}. This segment will cover ${layoutSegment.description} and will last approximately ${layoutSegment.duration} minutes. Please give your full attention to our presenter.`;
+          // Extract start and end times from custom_properties
+          const presentationProps =
+            (layoutSegment.custom_properties as Record<string, any>) || {};
+          const presentationStartTime = presentationProps.start_time || "";
+          const presentationEndTime = presentationProps.end_time || "";
+
+          scriptContent = `Next up, we have a presentation on ${
+            layoutSegment.name
+          }. ${
+            presentationStartTime
+              ? `Starting at ${presentationStartTime}, `
+              : ""
+          }this segment will cover ${
+            layoutSegment.description
+          } and will last approximately ${layoutSegment.duration} minutes${
+            presentationEndTime ? ` until ${presentationEndTime}` : ""
+          }. Please give your full attention to our presenter.`;
           break;
 
         case "discussion":
-          scriptContent = `Now, let's engage in a discussion about ${layoutSegment.name}. We encourage everyone to share their thoughts and perspectives. Remember, there are no wrong answers, and all viewpoints are valuable to our collective learning.`;
+          // Extract start and end times from custom_properties
+          const discussionProps =
+            (layoutSegment.custom_properties as Record<string, any>) || {};
+          const discussionStartTime = discussionProps.start_time || "";
+          const discussionEndTime = discussionProps.end_time || "";
+
+          scriptContent = `Now, let's engage in a discussion about ${
+            layoutSegment.name
+          }. ${
+            discussionStartTime ? `Starting at ${discussionStartTime}, ` : ""
+          }we encourage everyone to share their thoughts and perspectives. ${
+            discussionEndTime
+              ? `We'll wrap up this discussion at ${discussionEndTime}. `
+              : ""
+          }Remember, there are no wrong answers, and all viewpoints are valuable to our collective learning.`;
           break;
 
         case "demo":
-          scriptContent = `We're now moving to a demonstration of ${layoutSegment.name}. This will give you a practical understanding of ${layoutSegment.description}. Please observe carefully, and we'll have time for questions afterward.`;
+          // Extract start and end times from custom_properties
+          const demoProps =
+            (layoutSegment.custom_properties as Record<string, any>) || {};
+          const demoStartTime = demoProps.start_time || "";
+          const demoEndTime = demoProps.end_time || "";
+
+          scriptContent = `We're now moving to a demonstration of ${
+            layoutSegment.name
+          }. ${
+            demoStartTime ? `Starting at ${demoStartTime}, ` : ""
+          }this will give you a practical understanding of ${
+            layoutSegment.description
+          }. ${
+            demoEndTime
+              ? `This demonstration will conclude at ${demoEndTime}. `
+              : ""
+          }Please observe carefully, and we'll have time for questions afterward.`;
           break;
 
         default:
-          scriptContent = `Next up is our ${layoutSegment.name} segment. ${layoutSegment.description} This will last approximately ${layoutSegment.duration} minutes.`;
+          // Extract start and end times from custom_properties
+          const defaultProps =
+            (layoutSegment.custom_properties as Record<string, any>) || {};
+          const defaultStartTime = defaultProps.start_time || "";
+          const defaultEndTime = defaultProps.end_time || "";
+
+          scriptContent = `Next up is our ${layoutSegment.name} segment. ${
+            defaultStartTime ? `Starting at ${defaultStartTime}, ` : ""
+          }${layoutSegment.description} This will last approximately ${
+            layoutSegment.duration
+          } minutes${defaultEndTime ? ` until ${defaultEndTime}` : ""}.`;
       }
 
       // Create script segment in database
@@ -775,14 +1022,26 @@ export async function generateScriptFromLayout(eventId: string) {
 }
 
 // Finalize event
-export async function finalizeEvent(eventId: string) {
+export async function finalizeEvent(
+  eventId: string,
+  options?: { skipTTS?: boolean }
+) {
   try {
+    // Check if the skip_tts field exists in the schema
+    // If not, we'll just update the status
     const event = await db.events.update({
       where: { event_id: parseInt(eventId) },
-      data: { status: "ready" },
+      data: {
+        status: "ready",
+        // Store skipTTS preference in the event_settings JSON field
+        event_settings: {
+          skip_tts: options?.skipTTS === true,
+        },
+      },
     });
 
     revalidatePath("/dashboard");
+    revalidatePath(`/event/${eventId}`);
     return { success: true, event };
   } catch (error) {
     console.error("Error finalizing event:", error);
@@ -990,14 +1249,22 @@ export async function getEventById(eventId: string): Promise<{
         eventId: event.layout.event_id,
         totalDuration: event.layout.total_duration,
         lastUpdated: event.layout.updated_at.toISOString(),
-        segments: event.layout.segments.map((segment: any) => ({
-          id: segment.id.toString(),
-          name: segment.name,
-          type: segment.type,
-          description: segment.description,
-          duration: segment.duration,
-          order: segment.order,
-        })),
+        segments: event.layout.segments.map((segment: any) => {
+          // Extract start and end times from custom_properties
+          const customProps =
+            (segment.custom_properties as Record<string, any>) || {};
+
+          return {
+            id: segment.id.toString(),
+            name: segment.name,
+            type: segment.type,
+            description: segment.description,
+            duration: segment.duration,
+            order: segment.order,
+            startTime: customProps.start_time || "",
+            endTime: customProps.end_time || "",
+          };
+        }),
       };
     }
 
@@ -1026,7 +1293,7 @@ export async function getEventById(eventId: string): Promise<{
           | "generated",
         timing: segment.timing || 0,
         order: segment.order,
-        audio: segment.audio_url,
+        audio_url: segment.audio_url,
         presentationSlide: null,
       })),
       layout: formattedLayout,
@@ -1047,6 +1314,205 @@ export async function getEventById(eventId: string): Promise<{
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to fetch event",
+    };
+  }
+}
+
+/**
+ * Delete an event and all its related resources
+ * This includes:
+ * 1. Script segments and their audio files in S3
+ * 2. Layout segments
+ * 3. Event layout
+ * 4. The event itself
+ * 5. Any chat messages associated with the event
+ */
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client } from "@aws-sdk/client-s3";
+
+export async function deleteEvent(eventId: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    // Get the authenticated user
+    const session = await auth();
+
+    if (!session || !session.userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    // Parse the event ID to a number
+    const eventIdNum = parseInt(eventId);
+    if (isNaN(eventIdNum)) {
+      return { success: false, error: "Invalid event ID format" };
+    }
+
+    console.log(`Deleting event with ID: ${eventIdNum}`);
+
+    // Get the event with all related resources
+    const event = await db.events.findUnique({
+      where: {
+        event_id: eventIdNum,
+        user_id: session.userId, // Ensure the user can only delete their own events
+      },
+      include: {
+        segments: true, // Include script segments
+        layout: {
+          include: {
+            segments: true, // Include layout segments
+          },
+        },
+      },
+    });
+
+    if (!event) {
+      return { success: false, error: "Event not found" };
+    }
+
+    // Initialize S3 client for deleting audio files
+    const s3Client = new S3Client({
+      region: process.env.AWS_REGION || "us-east-1",
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
+      },
+    });
+    const BUCKET_NAME = process.env.S3_BUCKET_NAME || "rhymeai-audio";
+
+    // 1. Delete script segments and their audio files
+    if (event.segments && event.segments.length > 0) {
+      console.log(
+        `Deleting ${event.segments.length} script segments and their audio files`
+      );
+
+      // Delete audio files from S3
+      for (const segment of event.segments) {
+        if (segment.audio_url) {
+          try {
+            // Extract the S3 key from the audio URL
+            // The audio URL might be a presigned URL or a direct S3 URL
+            // We need to extract just the key part
+            let audioKey = "";
+
+            if (segment.audio_url.includes("audio/event-")) {
+              // If it's a path pattern we recognize
+              const keyMatch = segment.audio_url.match(
+                /audio\/event-\d+\/segment-[^?]+/
+              );
+              if (keyMatch) {
+                audioKey = keyMatch[0];
+              }
+            } else {
+              // Use the audio_url directly as the key if it doesn't match our pattern
+              // This assumes audio_url contains the S3 key
+              audioKey = segment.audio_url;
+            }
+
+            if (audioKey) {
+              console.log(`Deleting audio file with key: ${audioKey}`);
+
+              const deleteCommand = new DeleteObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: audioKey,
+              });
+
+              await s3Client.send(deleteCommand);
+              console.log(`Successfully deleted audio file: ${audioKey}`);
+            } else {
+              console.warn(
+                `Could not determine S3 key for audio URL: ${segment.audio_url}`
+              );
+            }
+          } catch (error) {
+            console.error(
+              `Error deleting audio file for segment ${segment.id}:`,
+              error
+            );
+            // Continue with deletion even if S3 deletion fails
+          }
+        }
+      }
+
+      // Delete script segments from database
+      await db.script_segments.deleteMany({
+        where: {
+          event_id: eventIdNum,
+        },
+      });
+
+      console.log(
+        `Successfully deleted script segments for event ${eventIdNum}`
+      );
+    }
+
+    // 2. Delete layout segments
+    if (
+      event.layout &&
+      event.layout.segments &&
+      event.layout.segments.length > 0
+    ) {
+      console.log(`Deleting ${event.layout.segments.length} layout segments`);
+
+      await db.layout_segments.deleteMany({
+        where: {
+          layout_id: event.layout.id,
+        },
+      });
+
+      console.log(
+        `Successfully deleted layout segments for event ${eventIdNum}`
+      );
+    }
+
+    // 3. Delete event layout
+    if (event.layout) {
+      console.log(`Deleting layout for event ${eventIdNum}`);
+
+      await db.event_layout.delete({
+        where: {
+          id: event.layout.id,
+        },
+      });
+
+      console.log(`Successfully deleted layout for event ${eventIdNum}`);
+    }
+
+    // 4. Delete chat messages associated with the event
+    console.log(`Deleting chat messages for event ${eventIdNum}`);
+
+    await db.chat_messages.deleteMany({
+      where: {
+        event_id: eventIdNum,
+      },
+    });
+
+    console.log(`Successfully deleted chat messages for event ${eventIdNum}`);
+
+    // 5. Finally, delete the event itself
+    console.log(`Deleting event ${eventIdNum}`);
+
+    await db.events.delete({
+      where: {
+        event_id: eventIdNum,
+      },
+    });
+
+    console.log(`Successfully deleted event ${eventIdNum}`);
+
+    // Revalidate the dashboard page to reflect the changes
+    revalidatePath("/dashboard");
+
+    return {
+      success: true,
+      message: "Event and all related resources successfully deleted",
+    };
+  } catch (error) {
+    console.error("Error deleting event:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete event",
     };
   }
 }

@@ -69,7 +69,31 @@ export default function useTextToSpeech() {
     utterance.onstart = () => setIsPlaying(true);
     utterance.onend = () => setIsPlaying(false);
     utterance.onerror = (event) => {
-      console.error("SpeechSynthesis error:", event);
+      // Get more detailed error information
+      const errorType = event.error || "unknown";
+      const errorMessage = event.message || "No error details available";
+
+      console.error(`SpeechSynthesis error: ${errorType}`, event);
+
+      // Handle specific error types
+      if (errorType === "canceled") {
+        console.log(
+          "Speech synthesis was canceled - this is normal when navigating or starting a new speech"
+        );
+      } else if (errorType === "interrupted") {
+        console.log("Speech synthesis was interrupted by another utterance");
+      } else if (errorType === "audio-busy") {
+        console.log("Audio channel was busy");
+      } else if (errorType === "network") {
+        console.error("Network error occurred during speech synthesis");
+      } else if (errorType === "synthesis-unavailable") {
+        console.error("Speech synthesis service was unavailable");
+      } else {
+        console.error(
+          `Unhandled speech synthesis error: ${errorType} - ${errorMessage}`
+        );
+      }
+
       setIsPlaying(false);
     };
 

@@ -11,12 +11,26 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Initialize S3 client
+// Log AWS configuration for debugging
+console.log(`AWS Region: ${process.env.AWS_REGION || "us-east-1"}`);
+console.log(`S3 Bucket: ${process.env.S3_BUCKET_NAME || "rhymeai-audio"}`);
+console.log(
+  `AWS Credentials Available: ${!!(
+    process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+  )}`
+);
+
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || "us-east-1",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
-  },
+  // Only provide credentials if both values are present
+  ...(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+    ? {
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        },
+      }
+    : {}), // Otherwise, let the SDK use the default credential provider chain
 });
 
 // S3 bucket name
@@ -35,16 +49,32 @@ export async function uploadToS3(
   contentType: string = "audio/mpeg"
 ): Promise<string> {
   try {
-    // Create the PutObjectCommand
+    // Validate the buffer to ensure it's a valid audio file
+    if (buffer.length < 100) {
+      throw new Error("Invalid audio buffer: too small");
+    }
+
+    // Create the PutObjectCommand with improved metadata
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
       Key: key,
       Body: buffer,
       ContentType: contentType,
+      // Add additional metadata for better audio handling
+      ContentDisposition: `inline; filename="${key.split("/").pop()}"`,
+      CacheControl: "public, max-age=31536000", // Cache for 1 year
+      Metadata: {
+        "x-amz-meta-content-type": contentType,
+        "x-amz-meta-original-filename": key.split("/").pop() || "",
+        "x-amz-meta-creation-time": new Date().toISOString(),
+      },
     });
 
     // Upload the file
     await s3Client.send(command);
+    console.log(
+      `Successfully uploaded ${buffer.length} bytes to S3 key: ${key}`
+    );
 
     // Generate a presigned URL that expires in 5 days
     const fiveDaysInSeconds = 5 * 24 * 60 * 60; // 5 days in seconds
@@ -74,6 +104,22 @@ export async function getPresignedUrl(
       `Generating presigned URL for key: ${key} with expiration: ${expiresIn} seconds`
     );
 
+    // Verify AWS credentials are available
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+      console.error("AWS credentials are missing in environment variables");
+      throw new Error(
+        "AWS credentials are missing. Please check your environment configuration."
+      );
+    }
+
+    // Verify bucket name is set
+    if (!process.env.S3_BUCKET_NAME) {
+      console.error("S3_BUCKET_NAME is missing in environment variables");
+      throw new Error(
+        "S3 bucket name is missing. Please check your environment configuration."
+      );
+    }
+
     // Check if the object exists in S3
     const exists = await checkS3ObjectExists(key).catch((error) => {
       console.warn(`Error checking if object exists, assuming it does:`, error);
@@ -84,24 +130,70 @@ export async function getPresignedUrl(
       throw new Error(`Object does not exist in S3: ${key}`);
     }
 
-    // Create the GetObjectCommand with response headers for CORS
-    const command = new GetObjectCommand({
+    // Determine the content type based on the file extension
+    const fileExtension = key.split(".").pop()?.toLowerCase();
+    const contentType =
+      fileExtension === "mp3"
+        ? "audio/mp3"
+        : fileExtension === "wav"
+        ? "audio/wav"
+        : fileExtension === "ogg"
+        ? "audio/ogg"
+        : fileExtension === "m4a"
+        ? "audio/mp4"
+        : "application/octet-stream";
+
+    console.log(
+      `Using content type ${contentType} for file with extension ${fileExtension}`
+    );
+
+    // Create the GetObjectCommand with improved response headers for audio playback
+    const params = {
       Bucket: BUCKET_NAME,
       Key: key,
-      ResponseContentType: "audio/mpeg", // Ensure proper content type
+      ResponseContentType: contentType, // Set the correct content type
       ResponseContentDisposition: `inline; filename="${key.split("/").pop()}"`, // Ensure proper filename
-      // Add CORS headers
-      ResponseCacheControl: "no-cache, no-store, must-revalidate",
-    });
+      ResponseCacheControl: "public, max-age=86400", // Cache for 24 hours
+      ResponseContentEncoding: "identity", // No additional encoding
+    };
 
-    // Generate the presigned URL
-    const url = await getSignedUrl(s3Client, command, {
-      expiresIn,
-    });
+    const command = new GetObjectCommand(params);
 
-    console.log(`Generated presigned URL: ${url.substring(0, 100)}...`);
+    try {
+      // Generate the presigned URL
+      console.log(`Generating signed URL with expiresIn: ${expiresIn} seconds`);
+      console.log(
+        `Using S3 client with region: ${process.env.AWS_REGION || "us-east-1"}`
+      );
 
-    return url;
+      const url = await getSignedUrl(s3Client, command, {
+        expiresIn,
+      });
+
+      console.log(`Generated presigned URL: ${url}`);
+      return url;
+    } catch (signedUrlError) {
+      console.error("Error in getSignedUrl:", signedUrlError);
+
+      // More detailed error for credential issues
+      const errorString = String(signedUrlError);
+      if (errorString.includes("Credential")) {
+        console.error(
+          "AWS credential error detected. Check your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."
+        );
+        throw new Error(
+          "AWS credential error. Please check your AWS configuration."
+        );
+      }
+
+      throw new Error(
+        `Failed to generate signed URL: ${
+          signedUrlError instanceof Error
+            ? signedUrlError.message
+            : String(signedUrlError)
+        }`
+      );
+    }
   } catch (error) {
     console.error("Error generating presigned URL:", error);
     throw new Error(
@@ -145,20 +237,23 @@ export function generatePresentationKey(
  * @returns True if S3 is configured, false otherwise
  */
 export function isS3Configured(): boolean {
-  return !!(
-    process.env.AWS_ACCESS_KEY_ID &&
-    process.env.AWS_SECRET_ACCESS_KEY &&
-    process.env.S3_BUCKET_NAME
-  );
-}
+  // Check if bucket name is configured
+  const hasBucket = !!process.env.S3_BUCKET_NAME;
 
-/**
- * Get the full S3 URL for a key
- * @param key The S3 key
- * @returns The full S3 URL
- */
-export function getS3Url(key: string): string {
-  return `https://${BUCKET_NAME}.s3.amazonaws.com/${key}`;
+  // Check if credentials are configured directly
+  const hasDirectCredentials = !!(
+    process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+  );
+
+  // Check for AWS_PROFILE or other credential indicators
+  const hasProfileOrOtherCredentials = !!(
+    process.env.AWS_PROFILE ||
+    process.env.AWS_WEB_IDENTITY_TOKEN_FILE ||
+    process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+  );
+
+  // S3 is configured if we have a bucket and either direct credentials or profile/other credentials
+  return hasBucket && (hasDirectCredentials || hasProfileOrOtherCredentials);
 }
 
 /**

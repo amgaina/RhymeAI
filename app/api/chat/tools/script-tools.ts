@@ -2,7 +2,7 @@ import {
   createScriptSegment,
   updateScriptSegment,
 } from "@/app/actions/event/script";
-import { generateScriptFromLayout } from "@/app/actions/event/layout";
+import { generateScriptFromLayout as generateScriptFromLayoutAction } from "@/app/actions/event/script-generation";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -19,7 +19,7 @@ export const generateScriptFromLayoutTool = tool({
 
     try {
       // Call the server action to generate script from layout
-      const result = await generateScriptFromLayout(params.eventId);
+      const result = await generateScriptFromLayoutAction(params.eventId);
 
       if (result.success) {
         return {
@@ -144,7 +144,7 @@ export const updateScriptTool = tool({
       updateData.id = params.segmentId;
 
       // Call the server action to update the segment
-      const result = await updateScriptSegment(params.eventId, updateData);
+      const result = await updateScriptSegment(params.segmentId, updateData);
 
       if (result.success) {
         return {

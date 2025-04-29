@@ -44,11 +44,46 @@ export function EventDetailsStep({
     }
   }, [isEditMode]);
 
+  // Generate a stable chat ID for this event to ensure chat continuity
+  const chatSessionId = eventId ? `event-${eventId}` : undefined;
+
+  // Store the useChat state in localStorage to persist between renders
+  useEffect(() => {
+    // When the component mounts, check if we have a stored useChat state
+    if (eventId) {
+      const storedUseChatState = localStorage.getItem(`useChat-${eventId}`);
+      if (storedUseChatState === "true") {
+        setUseChat(true);
+      }
+    }
+
+    // When useChat changes, store the state
+    if (eventId) {
+      localStorage.setItem(`useChat-${eventId}`, useChat ? "true" : "false");
+    }
+  }, [eventId, useChat]);
+
+  // Helper function to ensure we have a valid date
+  const getValidDate = (dateString?: string): string => {
+    if (!dateString) return new Date().toISOString().split("T")[0];
+
+    // Check if the date is in YYYY-MM-DD format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateString))
+      return new Date().toISOString().split("T")[0];
+
+    // Check if the date is valid
+    const date = new Date(dateString);
+    return !isNaN(date.getTime())
+      ? dateString
+      : new Date().toISOString().split("T")[0];
+  };
+
   // Form state for editing mode
   const [formData, setFormData] = useState({
     eventName: eventData?.eventName || "",
     eventType: eventData?.eventType || "",
-    eventDate: eventData?.eventDate || "",
+    eventDate: getValidDate(eventData?.eventDate),
     eventLocation: eventData?.eventLocation || "",
     audienceSize: eventData?.audienceSize || "",
     eventDescription: eventData?.eventDescription || "",
@@ -103,7 +138,14 @@ export function EventDetailsStep({
 
       // Create FormData object for the server action
       const formDataObj = new FormData();
-      Object.entries(formData).forEach(([key, value]) => {
+
+      // Ensure we have a valid date before submitting
+      const validatedFormData = {
+        ...formData,
+        eventDate: getValidDate(formData.eventDate),
+      };
+
+      Object.entries(validatedFormData).forEach(([key, value]) => {
         formDataObj.append(key, value.toString());
       });
 
@@ -113,21 +155,21 @@ export function EventDetailsStep({
       if (result.success) {
         // Update the local state with the updated data
         onEventDataCollected({
-          ...formData,
+          ...validatedFormData,
           voicePreference: {
-            gender: formData.voiceGender,
-            tone: formData.voiceType,
-            accent: formData.accent,
+            gender: validatedFormData.voiceGender,
+            tone: validatedFormData.voiceType,
+            accent: validatedFormData.accent,
             speed:
-              formData.speakingRate === "80"
+              validatedFormData.speakingRate === "80"
                 ? "fast"
-                : formData.speakingRate === "20"
+                : validatedFormData.speakingRate === "20"
                 ? "slow"
                 : "medium",
             pitch:
-              formData.pitch === "80"
+              validatedFormData.pitch === "80"
                 ? "high"
-                : formData.pitch === "20"
+                : validatedFormData.pitch === "20"
                 ? "low"
                 : "medium",
           },
@@ -199,7 +241,7 @@ export function EventDetailsStep({
                   strokeLinejoin="round"
                 />
               </svg>
-              Use Chat
+              {eventId ? "Continue Chat" : "Use Chat"}
             </Button>
           </div>
         )}
@@ -265,6 +307,8 @@ What would you like to update or add to your event details? I can help you refin
             }
             placeholder="Tell me about your event..."
             eventId={eventId || undefined}
+            chatSessionId={chatSessionId}
+            preserveChat={true}
             eventContext={{
               purpose: "To create a customized AI host script for an event",
               requiredFields: [
@@ -287,8 +331,16 @@ What would you like to update or add to your event details? I can help you refin
               },
             }}
             onEventDataCollected={(data) => {
+              // Process the collected data
               onEventDataCollected(data);
-              setUseChat(false);
+
+              // Don't hide the chat interface - let the user continue the conversation
+              // The user can manually close it when they're done
+              // This ensures chat continuity
+            }}
+            onContinue={() => {
+              // Navigate to the next step (layout) when the user clicks the "Next Step" button
+              onContinue();
             }}
           />
         </div>

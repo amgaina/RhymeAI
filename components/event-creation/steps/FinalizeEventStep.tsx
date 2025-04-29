@@ -10,6 +10,9 @@ interface FinalizeEventStepProps {
   scriptSegments: ScriptSegment[];
   isLoading: boolean;
   onFinalizeEvent: () => void;
+  onFinalizeWithoutTTS: () => void;
+  onGenerateAllTTS: () => void;
+  isGeneratingTTS: boolean;
   onBack: () => void;
   onGoToDetails?: () => void; // Optional for backward compatibility
 }
@@ -21,6 +24,9 @@ export function FinalizeEventStep({
   scriptSegments,
   isLoading,
   onFinalizeEvent,
+  onFinalizeWithoutTTS,
+  onGenerateAllTTS,
+  isGeneratingTTS,
   onBack,
   onGoToDetails,
 }: FinalizeEventStepProps) {
@@ -90,20 +96,45 @@ export function FinalizeEventStep({
             )}
           </div>
 
-          <Button
-            onClick={onFinalizeEvent}
-            disabled={isLoading}
-            className="bg-green-600 hover:bg-green-700"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Finalizing...
-              </>
-            ) : (
-              "Finalize Event"
-            )}
-          </Button>
+          <div className="flex space-x-2">
+            <Button
+              onClick={onGenerateAllTTS}
+              disabled={isLoading || isGeneratingTTS}
+              variant="outline"
+            >
+              {isGeneratingTTS ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating Audio...
+                </>
+              ) : (
+                "Generate All TTS"
+              )}
+            </Button>
+
+            <Button
+              onClick={onFinalizeWithoutTTS}
+              disabled={isLoading}
+              variant="secondary"
+            >
+              Finalize Without TTS
+            </Button>
+
+            <Button
+              onClick={onFinalizeEvent}
+              disabled={isLoading}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Finalizing...
+                </>
+              ) : (
+                "Finalize Event"
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

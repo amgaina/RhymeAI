@@ -1,5 +1,4 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -21,12 +20,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getPresignedAudioUrl } from "@/app/actions/event/get-presigned-url";
-import { useToast } from "@/components/ui/use-toast";
-import useTextToSpeech from "@/hooks/useTextToSpeech";
+import useAudioPlayer from "@/hooks/useAudioPlayer";
 
 interface DOMBasedAudioPlayerProps {
-  audioUrl?: string | null;
+  /**
+   * The S3 key for the audio file (not a full URL)
+   * This should be the key stored in the database (e.g., "audio/event-123/segment-456.mp3")
+   */
+  audioS3key?: string | null;
   title?: string;
   scriptText?: string;
   segmentIndex?: number;
@@ -34,497 +35,65 @@ interface DOMBasedAudioPlayerProps {
   segmentId?: number;
   onNextSegment?: () => void;
   onPrevSegment?: () => void;
+  onRefreshUrl?: () => void;
 }
 
 export default function DOMBasedAudioPlayer({
-  audioUrl,
+  audioS3key,
   title,
   scriptText,
   segmentIndex = 0,
   totalSegments = 1,
-  segmentId,
+  segmentId: _segmentId, // Prefix with underscore to indicate it's not used
   onNextSegment,
   onPrevSegment,
+  onRefreshUrl,
 }: DOMBasedAudioPlayerProps) {
-  // State for audio playback
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [volume, setVolume] = useState(80);
-  const [playbackRate, setPlaybackRate] = useState(1.0);
-
-  // State for presigned URL
-  const [presignedUrl, setPresignedUrl] = useState<string | null>(null);
-  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
-  const [urlError, setUrlError] = useState<string | null>(null);
-
-  // Audio element reference
-  const audioRef = useRef<HTMLAudioElement>(null);
-
-  // Toast notifications
-  const { toast } = useToast();
-
-  // Browser TTS fallback
+  // Use our custom hook for audio functionality
   const {
-    speakText,
-    stopSpeaking,
-    isPlaying: isBrowserTtsPlaying,
-  } = useTextToSpeech();
-
-  // Fetch presigned URL when segmentId or audioUrl changes
-  useEffect(() => {
-    // Check if we have a segmentId or audioUrl
-    if (!segmentId && !audioUrl) {
-      console.log("No segmentId or audioUrl provided");
-      return;
-    }
-
-    // Check if the audioUrl is a full URL or just an S3 key
-    const isFullUrl =
-      audioUrl &&
-      (audioUrl.startsWith("http://") || audioUrl.startsWith("https://"));
-    const isS3Key =
-      audioUrl &&
-      !isFullUrl &&
-      (audioUrl.startsWith("audio/") || audioUrl.includes(".mp3"));
-
-    console.log(
-      `Audio URL type: ${
-        isFullUrl ? "full URL" : isS3Key ? "S3 key" : "unknown"
-      }`
-    );
-
-    const fetchPresignedUrl = async () => {
-      try {
-        setIsLoadingUrl(true);
-        setUrlError(null);
-
-        // If we have a segmentId, use that to get a presigned URL
-        if (segmentId) {
-          console.log(`Fetching presigned URL for segment ${segmentId}`);
-          const result = await getPresignedAudioUrl(segmentId);
-
-          if (result.success && result.presignedUrl) {
-            console.log(
-              `Got presigned URL: ${result.presignedUrl.substring(0, 100)}...`
-            );
-            setPresignedUrl(result.presignedUrl);
-            return;
-          } else {
-            console.error(`Error getting presigned URL: ${result.error}`);
-            setUrlError(result.error || "Failed to get presigned URL");
-
-            // Continue to try other methods
-          }
-        }
-
-        // If we have an S3 key, try to get a presigned URL for it directly
-        if (isS3Key) {
-          try {
-            console.log(`Generating presigned URL for S3 key: ${audioUrl}`);
-            // Import the getPresignedUrl function directly
-            const { getPresignedUrl } = await import("@/lib/s3-utils");
-            const presignedUrl = await getPresignedUrl(audioUrl!, 3600);
-
-            console.log(
-              `Got presigned URL for S3 key: ${presignedUrl.substring(
-                0,
-                100
-              )}...`
-            );
-            setPresignedUrl(presignedUrl);
-            return;
-          } catch (error) {
-            console.error(
-              `Error generating presigned URL for S3 key: ${audioUrl}`,
-              error
-            );
-            setUrlError(
-              `Failed to generate presigned URL: ${
-                error instanceof Error ? error.message : String(error)
-              }`
-            );
-
-            // Continue to try other methods
-          }
-        }
-
-        // If we have a full URL, use it directly
-        if (isFullUrl) {
-          console.log(`Using full URL directly: ${audioUrl}`);
-          setPresignedUrl(audioUrl);
-          return;
-        }
-
-        // If we get here, we couldn't play the audio
-        console.error("Could not play audio: no valid URL available");
-        setUrlError("Could not play audio: no valid URL available");
-
-        toast({
-          title: "Error",
-          description: "Could not play audio: no valid URL available",
-          variant: "destructive",
-        });
-      } catch (error) {
-        console.error("Error fetching presigned URL:", error);
-        setUrlError(error instanceof Error ? error.message : "Unknown error");
-
-        // Try with the original URL as fallback if it's a full URL
-        if (isFullUrl) {
-          console.log(
-            `Using original URL as fallback after error: ${audioUrl}`
-          );
-          setPresignedUrl(audioUrl);
-        }
-      } finally {
-        setIsLoadingUrl(false);
-      }
-    };
-
-    fetchPresignedUrl();
-  }, [segmentId, audioUrl, toast]);
-
-  // Refresh presigned URL
-  const refreshPresignedUrl = async () => {
-    if (!segmentId) {
-      toast({
-        title: "Error",
-        description: "No segment ID provided",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setIsLoadingUrl(true);
-      setUrlError(null);
-
-      console.log(`Refreshing presigned URL for segment ${segmentId}`);
-      const result = await getPresignedAudioUrl(segmentId);
-
-      if (result.success && result.presignedUrl) {
-        console.log(
-          `Got new presigned URL: ${result.presignedUrl.substring(0, 100)}...`
-        );
-        setPresignedUrl(result.presignedUrl);
-
-        toast({
-          title: "URL Refreshed",
-          description: "Audio URL has been refreshed",
-        });
-      } else {
-        console.error(`Error refreshing presigned URL: ${result.error}`);
-        setUrlError(result.error || "Failed to refresh presigned URL");
-        toast({
-          title: "Error",
-          description: result.error || "Failed to refresh presigned URL",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error("Error refreshing presigned URL:", error);
-      setUrlError(error instanceof Error ? error.message : "Unknown error");
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingUrl(false);
-    }
-  };
-
-  // Handle play/pause
-  const togglePlay = () => {
-    // If browser TTS is playing, stop it
-    if (isBrowserTtsPlaying) {
-      stopSpeaking();
-      return;
-    }
-
-    if (!audioRef.current) {
-      console.error("No audio element available");
-
-      // Fall back to browser TTS if script text is available
-      if (scriptText) {
-        speakText(scriptText, { rate: playbackRate });
-      }
-
-      return;
-    }
-
-    if (isPlaying) {
-      console.log("Pausing audio");
-      audioRef.current.pause();
-    } else {
-      console.log(`Attempting to play audio`);
-      audioRef.current.play().catch((e) => {
-        console.error("Error playing audio:", e);
-
-        // Fall back to browser TTS if script text is available
-        if (scriptText) {
-          toast({
-            title: "Falling back to browser TTS",
-            description: "Using browser's text-to-speech as fallback",
-          });
-          speakText(scriptText, { rate: playbackRate });
-        } else {
-          toast({
-            title: "Playback Error",
-            description: `Error playing audio: ${e.message}`,
-            variant: "destructive",
-            action: (
-              <Button variant="outline" size="sm" onClick={refreshPresignedUrl}>
-                Refresh URL
-              </Button>
-            ),
-          });
-        }
-      });
-    }
-  };
-
-  // Handle seek
-  const handleSeek = (value: number[]) => {
-    if (!audioRef.current) return;
-
-    const newTime = value[0];
-    const wasPlaying = !audioRef.current.paused;
-
-    // Update the current time
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-
-    // If the audio was playing before seeking, resume playback
-    if (wasPlaying) {
-      console.log("Resuming playback after seek");
-      audioRef.current.play().catch((e) => {
-        console.error("Error resuming playback after seek:", e);
-        toast({
-          title: "Playback Error",
-          description: "Failed to resume playback after seeking",
-          variant: "destructive",
-        });
-      });
-    }
-  };
-
-  // Skip forward 10 seconds
-  const skipForward = () => {
-    if (!audioRef.current) return;
-
-    const wasPlaying = !audioRef.current.paused;
-    const newTime = Math.min(audioRef.current.currentTime + 10, duration);
-
-    // Update the current time
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-
-    // If the audio was playing before skipping, ensure it continues playing
-    if (wasPlaying) {
-      console.log("Resuming playback after skip forward");
-      audioRef.current.play().catch((e) => {
-        console.error("Error resuming playback after skip forward:", e);
-      });
-    }
-  };
-
-  // Skip backward 10 seconds
-  const skipBackward = () => {
-    if (!audioRef.current) return;
-
-    const wasPlaying = !audioRef.current.paused;
-    const newTime = Math.max(audioRef.current.currentTime - 10, 0);
-
-    // Update the current time
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-
-    // If the audio was playing before skipping, ensure it continues playing
-    if (wasPlaying) {
-      console.log("Resuming playback after skip backward");
-      audioRef.current.play().catch((e) => {
-        console.error("Error resuming playback after skip backward:", e);
-      });
-    }
-  };
-
-  // Handle volume change
-  const handleVolumeChange = (value: number[]) => {
-    if (!audioRef.current) return;
-
-    const newVolume = value[0];
-    audioRef.current.volume = newVolume / 100;
-    setVolume(newVolume);
-  };
-
-  // Handle playback rate change
-  const changePlaybackRate = (rate: number) => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = rate;
-    }
-    setPlaybackRate(rate);
-  };
-
-  // Format time to MM:SS
-  const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
-  };
-
-  // Set up event listeners for the audio element
-  useEffect(() => {
-    const audioElement = audioRef.current;
-    if (!audioElement) return;
-
-    const handleError = (e: Event) => {
-      console.error(`Audio loading error:`, e);
-
-      // Get detailed error information
-      let errorMessage = "Unknown error";
-      let errorCode = "";
-
-      if (audioElement.error) {
-        errorMessage = audioElement.error.message || "Unknown error";
-        errorCode = audioElement.error.code?.toString() || "";
-
-        // Map error codes to more descriptive messages
-        switch (audioElement.error.code) {
-          case MediaError.MEDIA_ERR_ABORTED:
-            errorMessage = "Playback aborted by the user";
-            break;
-          case MediaError.MEDIA_ERR_NETWORK:
-            errorMessage = "Network error occurred while loading the audio";
-            break;
-          case MediaError.MEDIA_ERR_DECODE:
-            errorMessage = "Audio decoding error";
-            break;
-          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-            errorMessage = "Audio format not supported";
-            break;
-        }
-      }
-
-      console.error(
-        `Audio error details: Code ${errorCode}, Message: ${errorMessage}`
-      );
-      if (audioElement.src) {
-        console.error(`Audio URL: ${audioElement.src}`);
-      }
-
-      setUrlError(`Error: ${errorMessage}`);
-
-      // Fall back to browser TTS if available
-      if (scriptText) {
-        toast({
-          title: "Falling back to browser TTS",
-          description: "Using browser's text-to-speech as fallback",
-        });
-        speakText(scriptText, { rate: playbackRate });
-      } else {
-        toast({
-          title: "Audio Error",
-          description: `Error loading audio: ${errorMessage}`,
-          variant: "destructive",
-          action: (
-            <Button variant="outline" size="sm" onClick={refreshPresignedUrl}>
-              Refresh URL
-            </Button>
-          ),
-        });
-      }
-    };
-
-    const handleLoadedMetadata = () => {
-      console.log(`Audio metadata loaded, duration: ${audioElement.duration}s`);
-      setDuration(audioElement.duration || 60);
-    };
-
-    const handleTimeUpdate = () => {
-      setCurrentTime(audioElement.currentTime);
-    };
-
-    const handleEnded = () => {
-      console.log("Audio playback ended");
-      setIsPlaying(false);
-      setCurrentTime(0);
-
-      if (onNextSegment && segmentIndex < totalSegments - 1) {
-        console.log("Moving to next segment after playback ended");
-        setTimeout(() => onNextSegment(), 500);
-      }
-    };
-
-    const handlePlay = () => {
-      console.log("Audio playback started");
-      setIsPlaying(true);
-    };
-
-    const handlePause = () => {
-      console.log("Audio playback paused");
-      setIsPlaying(false);
-    };
-
-    // Add event listeners
-    audioElement.addEventListener("error", handleError);
-    audioElement.addEventListener("loadedmetadata", handleLoadedMetadata);
-    audioElement.addEventListener("timeupdate", handleTimeUpdate);
-    audioElement.addEventListener("ended", handleEnded);
-    audioElement.addEventListener("play", handlePlay);
-    audioElement.addEventListener("pause", handlePause);
-
-    // Clean up event listeners on unmount
-    return () => {
-      audioElement.removeEventListener("error", handleError);
-      audioElement.removeEventListener("loadedmetadata", handleLoadedMetadata);
-      audioElement.removeEventListener("timeupdate", handleTimeUpdate);
-      audioElement.removeEventListener("ended", handleEnded);
-      audioElement.removeEventListener("play", handlePlay);
-      audioElement.removeEventListener("pause", handlePause);
-    };
-  }, [
-    onNextSegment,
+    isPlaying,
+    isBrowserTtsPlaying,
+    duration,
+    currentTime,
+    volume,
     playbackRate,
+    isLoadingUrl,
+    urlError,
+    audioRef,
+    togglePlay,
+    handleSeek,
+    skipForward,
+    skipBackward,
+    handleVolumeChange,
+    changePlaybackRate,
+    refreshPresignedUrl: defaultRefreshUrl,
+    formatTime,
+  } = useAudioPlayer({
+    audioS3key,
     scriptText,
+    onNextSegment,
     segmentIndex,
-    toast,
     totalSegments,
-  ]);
+  });
 
-  // Update audio element when presignedUrl changes
-  useEffect(() => {
-    if (!audioRef.current || !presignedUrl) return;
-
-    // Set audio properties
-    audioRef.current.volume = volume / 100;
-    audioRef.current.playbackRate = playbackRate;
-
-    // Set the source
-    audioRef.current.src = presignedUrl;
-    audioRef.current.load();
-
-    console.log(
-      `Updated audio element with URL: ${presignedUrl.substring(0, 100)}...`
-    );
-  }, [presignedUrl, volume, playbackRate]);
-
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      stopSpeaking();
-    };
-  }, [stopSpeaking]);
+  // Handle refresh URL with custom callback if provided
+  const handleRefreshUrl = () => {
+    if (onRefreshUrl) {
+      onRefreshUrl();
+    } else {
+      defaultRefreshUrl();
+    }
+  };
 
   return (
-    <Card className="bg-gray-50 border shadow-sm">
+    <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-indigo-100 shadow-md">
       <CardContent className="p-4">
         {title && (
-          <div className="flex justify-between items-center mb-2">
+          <div className="flex justify-between items-center mb-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-medium">{title}</h3>
+              <h3 className="text-sm font-medium text-indigo-800">{title}</h3>
               {isLoadingUrl && (
-                <span className="text-xs text-amber-500 flex items-center">
+                <span className="text-xs text-amber-600 flex items-center">
                   <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                   Loading...
                 </span>
@@ -534,95 +103,24 @@ export default function DOMBasedAudioPlayer({
               )}
             </div>
             <div className="flex items-center gap-2">
-              {segmentId && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 p-0 rounded-full"
-                    onClick={refreshPresignedUrl}
-                    disabled={isLoadingUrl}
-                    title="Refresh audio URL"
-                  >
-                    <RefreshCw
-                      className={`h-3.5 w-3.5 ${
-                        isLoadingUrl ? "animate-spin" : ""
-                      }`}
-                    />
-                  </Button>
-
-                  {/* URL test dropdown */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2 text-xs"
-                        title="Test URLs"
-                      >
-                        Test URL
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      {presignedUrl && (
-                        <DropdownMenuItem
-                          onClick={() => {
-                            console.log(
-                              `Opening presigned URL for testing: ${presignedUrl.substring(
-                                0,
-                                100
-                              )}...`
-                            );
-                            window.open(presignedUrl, "_blank");
-                          }}
-                        >
-                          Test Presigned URL
-                        </DropdownMenuItem>
-                      )}
-                      {audioUrl && (
-                        <DropdownMenuItem
-                          onClick={() => {
-                            console.log(
-                              `Opening original URL for testing: ${audioUrl.substring(
-                                0,
-                                100
-                              )}...`
-                            );
-                            window.open(audioUrl, "_blank");
-                          }}
-                        >
-                          Test Original URL
-                        </DropdownMenuItem>
-                      )}
-                      {scriptText && (
-                        <DropdownMenuItem
-                          onClick={() => {
-                            console.log("Using browser TTS as fallback");
-                            speakText(scriptText, { rate: playbackRate });
-                          }}
-                        >
-                          Use Browser TTS
-                        </DropdownMenuItem>
-                      )}
-                      {!presignedUrl && !audioUrl && !scriptText && (
-                        <DropdownMenuItem
-                          onClick={() => {
-                            toast({
-                              title: "No URL",
-                              description: "No audio URL available to test",
-                              variant: "destructive",
-                            });
-                          }}
-                        >
-                          No URL Available
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </>
+              {audioS3key && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 rounded-full text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100"
+                  onClick={handleRefreshUrl}
+                  disabled={isLoadingUrl}
+                  title="Refresh audio URL"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${
+                      isLoadingUrl ? "animate-spin" : ""
+                    }`}
+                  />
+                </Button>
               )}
               {totalSegments > 1 && (
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-indigo-600 bg-indigo-100 px-2 py-1 rounded-full">
                   Segment {segmentIndex + 1} of {totalSegments}
                 </span>
               )}
@@ -631,12 +129,12 @@ export default function DOMBasedAudioPlayer({
         )}
 
         {scriptText && (
-          <div className="mb-4 p-3 bg-white border rounded-md">
+          <div className="mb-4 p-3 bg-white border border-indigo-100 rounded-md shadow-sm">
             <p className="text-sm text-gray-700">{scriptText}</p>
           </div>
         )}
 
-        {/* Hidden audio element */}
+        {/* Hidden audio element for HTML5 audio API */}
         <audio
           ref={audioRef}
           preload="metadata"
@@ -645,8 +143,9 @@ export default function DOMBasedAudioPlayer({
         />
 
         <div className="space-y-4">
+          {/* Progress bar */}
           <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500">
+            <span className="text-xs font-medium text-indigo-700">
               {formatTime(currentTime)}
             </span>
             <div className="flex-1 mx-2">
@@ -659,17 +158,18 @@ export default function DOMBasedAudioPlayer({
                 className="cursor-pointer"
               />
             </div>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs font-medium text-indigo-700">
               {formatTime(duration)}
             </span>
           </div>
 
-          <div className="flex items-center justify-between">
+          {/* Controls */}
+          <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-indigo-100 shadow-sm">
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 w-8 rounded-full p-0"
+                className="h-8 w-8 rounded-full p-0 text-indigo-700 hover:bg-indigo-100"
                 disabled={(!audioRef.current && !scriptText) || !onPrevSegment}
                 onClick={onPrevSegment}
               >
@@ -679,7 +179,7 @@ export default function DOMBasedAudioPlayer({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 w-8 rounded-full p-0"
+                className="h-8 w-8 rounded-full p-0 text-indigo-700 hover:bg-indigo-100"
                 disabled={!audioRef.current && !scriptText}
                 onClick={skipBackward}
               >
@@ -689,21 +189,25 @@ export default function DOMBasedAudioPlayer({
               <Button
                 size="sm"
                 variant="default"
-                className="h-9 w-9 rounded-full p-0"
+                className={`h-10 w-10 rounded-full p-0 ${
+                  isPlaying || isBrowserTtsPlaying
+                    ? "bg-indigo-600 hover:bg-indigo-700"
+                    : "bg-indigo-500 hover:bg-indigo-600"
+                }`}
                 onClick={togglePlay}
                 disabled={isLoadingUrl && !scriptText}
               >
                 {isPlaying || isBrowserTtsPlaying ? (
                   <Pause className="h-4 w-4" />
                 ) : (
-                  <Play className="h-4 w-4" />
+                  <Play className="h-4 w-4 ml-0.5" />
                 )}
               </Button>
 
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 w-8 rounded-full p-0"
+                className="h-8 w-8 rounded-full p-0 text-indigo-700 hover:bg-indigo-100"
                 disabled={!audioRef.current && !scriptText}
                 onClick={skipForward}
               >
@@ -713,7 +217,7 @@ export default function DOMBasedAudioPlayer({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 w-8 rounded-full p-0"
+                className="h-8 w-8 rounded-full p-0 text-indigo-700 hover:bg-indigo-100"
                 disabled={(!audioRef.current && !scriptText) || !onNextSegment}
                 onClick={onNextSegment}
               >
@@ -721,13 +225,14 @@ export default function DOMBasedAudioPlayer({
               </Button>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Settings */}
+            <div className="flex items-center gap-3">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     size="sm"
-                    variant="ghost"
-                    className="h-8 rounded-full p-1 px-2 text-xs flex items-center gap-1"
+                    variant="outline"
+                    className="h-8 rounded-full p-1 px-2 text-xs flex items-center gap-1 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
                     disabled={!audioRef.current && !scriptText}
                   >
                     <Settings className="h-3 w-3" />
@@ -757,7 +262,7 @@ export default function DOMBasedAudioPlayer({
               </DropdownMenu>
 
               <div className="flex items-center gap-2 w-32">
-                <Volume2 className="h-4 w-4 text-gray-500" />
+                <Volume2 className="h-4 w-4 text-indigo-600" />
                 <Slider
                   value={[volume]}
                   max={100}

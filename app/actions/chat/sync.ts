@@ -24,9 +24,27 @@ export async function syncChatMessages(
       throw new Error("Unauthorized");
     }
 
+    console.log(`Syncing ${messages.length} messages for event ${eventId}`);
+
+    // Skip if no messages to sync
+    if (messages.length === 0) {
+      return {
+        success: true,
+        results: [],
+        syncedCount: 0,
+        failedCount: 0,
+        message: "No messages to sync",
+      };
+    }
+
     const results = await Promise.all(
       messages.map(async (message) => {
         try {
+          // Skip messages with empty content
+          if (!message.content || message.content.trim() === "") {
+            return { id: message.id, success: true, skipped: true };
+          }
+
           await saveChatMessage({
             eventId,
             messageId: message.id,
@@ -43,12 +61,20 @@ export async function syncChatMessages(
     );
 
     const allSucceeded = results.every((result) => result.success);
+    const syncedCount = results.filter((r) => r.success && !r.skipped).length;
+    const skippedCount = results.filter((r) => r.skipped).length;
+    const failedCount = results.filter((r) => !r.success).length;
+
+    console.log(
+      `Sync results: ${syncedCount} synced, ${skippedCount} skipped, ${failedCount} failed`
+    );
 
     return {
       success: allSucceeded,
       results,
-      syncedCount: results.filter((r) => r.success).length,
-      failedCount: results.filter((r) => !r.success).length,
+      syncedCount,
+      skippedCount,
+      failedCount,
     };
   } catch (error) {
     console.error("Failed to sync chat messages:", error);

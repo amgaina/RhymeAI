@@ -48,7 +48,9 @@ export function ScriptGenerationStep({
             <AudioPreview
               title={`Preview: ${selectedSegment.type}`}
               scriptText={selectedSegment.content}
+              audioS3key={selectedSegment.audio_url}
               audioUrl={selectedSegment.audio || undefined}
+              segmentId={selectedSegment.id}
             />
           )}
 

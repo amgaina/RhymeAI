@@ -17,6 +17,8 @@ import {
   RotateCw,
   ArrowDownCircle,
   Mic2,
+  MessageSquare,
+  ArrowRight,
 } from "lucide-react";
 import {
   Card,
@@ -40,6 +42,7 @@ import { convertToSSML, TTSVoiceParams } from "@/lib/tts-utils";
 import { saveChatMessage } from "@/app/actions/chat/save";
 import { syncChatMessages } from "@/app/actions/chat/sync";
 import { loadEventChatHistory } from "@/app/actions/chat/load-event-chat";
+import { PreviousConversations } from "@/components/PreviousConversations";
 
 interface RhymeAIChatProps {
   title?: string;
@@ -48,6 +51,8 @@ interface RhymeAIChatProps {
   placeholder?: string;
   className?: string;
   eventId?: number; // Add eventId prop to associate chat with an event
+  chatSessionId?: string; // Add chatSessionId prop to maintain chat continuity
+  preserveChat?: boolean; // Whether to preserve chat messages between sessions
   eventContext?: {
     purpose: string;
     requiredFields: string[];
@@ -57,6 +62,7 @@ interface RhymeAIChatProps {
   onEventDataCollected?: (data: any) => void;
   onScriptGenerated?: (script: any) => void;
   onVoiceSelected?: (voiceParams: TTSVoiceParams) => void;
+  onContinue?: () => void; // Add onContinue prop to handle navigation to next step
 }
 
 export function RhymeAIChat({
@@ -66,6 +72,8 @@ export function RhymeAIChat({
   placeholder = "Tell me about your event...",
   className = "",
   eventId, // This might be undefined if we're creating a new event
+  chatSessionId, // Unique ID for this chat session to maintain continuity
+  preserveChat = false, // Whether to preserve chat messages between sessions
   eventContext = {
     purpose: "event-creation",
     requiredFields: [
@@ -83,6 +91,7 @@ export function RhymeAIChat({
   onEventDataCollected,
   onScriptGenerated,
   onVoiceSelected,
+  onContinue, // Function to navigate to the next step
 }: RhymeAIChatProps) {
   const [collectedFields, setCollectedFields] = useState<
     Record<string, boolean>
@@ -97,12 +106,16 @@ export function RhymeAIChat({
     eventId
   );
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [showPreviousConversations, setShowPreviousConversations] =
+    useState(false);
 
   // Create a stable body object that doesn't change on every render
   const chatBody = useMemo(() => ({ eventContext }), [eventContext]);
 
   // Create a stable initial message that doesn't change on every render
   const initialChatMessage = useMemo(() => {
+    // Only use initial message if we don't have an eventId
+    // For events, we'll load messages from the database
     if (initialMessage && !eventId) {
       return [
         {
@@ -116,6 +129,20 @@ export function RhymeAIChat({
     return undefined;
   }, [initialMessage, eventId]);
 
+  // Generate a stable chat ID for this event
+  const chatId = useMemo(() => {
+    // If a specific chatSessionId is provided, use it
+    if (chatSessionId) return chatSessionId;
+
+    // Otherwise, create an ID based on the event ID
+    const currentEventId = eventId || createdEventId;
+    const id = currentEventId
+      ? `event-${currentEventId}`
+      : `new-event-${Date.now()}`;
+    console.log(`Generated chat ID: ${id} for event ID: ${currentEventId}`);
+    return id;
+  }, [chatSessionId, eventId, createdEventId]);
+
   const {
     messages,
     input,
@@ -126,7 +153,10 @@ export function RhymeAIChat({
   } = useChat({
     api: "/api/chat",
     body: chatBody,
+    id: chatId, // Use the stable chat ID
     initialMessages: initialChatMessage,
+    // Always preserve messages to ensure continuity
+    preserve: preserveChat,
     onResponse: (response) => {
       // Clear any previous errors
       setError(null);
@@ -146,6 +176,13 @@ export function RhymeAIChat({
       if (token) {
         setSyncToken(token);
       }
+
+      // Log the event ID for debugging
+      console.log(
+        `Chat response for event ID: ${
+          eventId || createdEventId
+        }, chat ID: ${chatId}`
+      );
     },
     onFinish: (message) => {
       // Process the completed message to extract fields
@@ -239,7 +276,9 @@ export function RhymeAIChat({
 
         // Save the assistant message to database if we have an eventId
         if (currentEventId) {
-          console.log(`Saving assistant message for event ${currentEventId}`);
+          console.log(
+            `Saving assistant message for event ${currentEventId}, message ID: ${message.id}`
+          );
 
           saveChatMessage({
             eventId: currentEventId,
@@ -247,9 +286,22 @@ export function RhymeAIChat({
             role: "assistant",
             content: message.content,
             toolCalls: message.toolInvocations || undefined,
-          }).catch((error) => {
-            console.error("Failed to save assistant message:", error);
-          });
+          })
+            .then(() => {
+              console.log(
+                `Successfully saved assistant message for event ${currentEventId}`
+              );
+            })
+            .catch((error) => {
+              console.error(
+                `Failed to save assistant message for event ${currentEventId}:`,
+                error
+              );
+            });
+        } else {
+          console.warn(
+            "No event ID available, assistant message not saved to database"
+          );
         }
       } catch (e) {
         console.error("Error processing AI response:", e);
@@ -350,17 +402,38 @@ export function RhymeAIChat({
         // Generate a temporary ID for the message
         const messageId = `user-${Date.now()}`;
 
-        console.log(`Saving user message for event ${currentEventId}`);
+        console.log(
+          `Saving user message for event ${currentEventId}, content: "${input.substring(
+            0,
+            30
+          )}..."`
+        );
 
         // Save the message to the database
-        await saveChatMessage({
-          eventId: currentEventId,
-          messageId: messageId,
-          role: "user",
-          content: input,
-        });
+        try {
+          await saveChatMessage({
+            eventId: currentEventId,
+            messageId: messageId,
+            role: "user",
+            content: input,
+          });
+          console.log(
+            `Successfully saved user message for event ${currentEventId}`
+          );
+        } catch (saveError) {
+          console.error(
+            `Failed to save user message for event ${currentEventId}:`,
+            saveError
+          );
+          // Continue with submission even if saving fails
+        }
+      } else if (!currentEventId) {
+        console.warn(
+          "No event ID available, user message not saved to database"
+        );
       }
 
+      // Submit the message to the AI
       await handleSubmit(e);
     } catch (err) {
       console.error("Error submitting message:", err);
@@ -406,6 +479,16 @@ export function RhymeAIChat({
       }
     }
   }, [eventId, createdEventId, initialMessage, isLoadingHistory]);
+
+  // Handle selecting a previous message
+  const handleSelectPreviousMessage = (message: string) => {
+    // Set the input field to the selected message
+    handleInputChange({
+      target: { value: message },
+    } as React.ChangeEvent<HTMLInputElement>);
+    // Hide the previous conversations panel
+    setShowPreviousConversations(false);
+  };
 
   // Generate script when all data is collected
   const handleGenerateScript = () => {
@@ -525,14 +608,24 @@ export function RhymeAIChat({
     let isMounted = true;
 
     async function fetchChatHistory() {
-      if (!eventId) return;
+      // Always try to load messages from the database first
+      if (!eventId) {
+        console.log("No eventId provided, skipping chat history load");
+        return;
+      }
 
+      console.log(`Attempting to load chat history for event ${eventId}`);
       setIsLoadingHistory(true);
+
       try {
+        // Use the loadEventChatHistory function directly
         const response = await loadEventChatHistory(eventId);
 
         // Only proceed if the component is still mounted
-        if (!isMounted) return;
+        if (!isMounted) {
+          console.log("Component unmounted, skipping state update");
+          return;
+        }
 
         if (
           response.success &&
@@ -540,31 +633,66 @@ export function RhymeAIChat({
           response.messages.length > 0
         ) {
           console.log(
-            `Loaded ${response.messages.length} chat messages for event ${eventId}`
+            `Successfully loaded ${response.messages.length} chat messages for event ${eventId}`
           );
 
-          // Replace all messages with the loaded ones - don't try to merge
+          // Always use the messages from the database for the current event
+          // This ensures we have the complete conversation history
           setMessages(response.messages);
+
+          // Log the first few messages for debugging
+          response.messages.slice(0, 3).forEach((msg, i) => {
+            console.log(
+              `Message ${i}: ${msg.role} - ${msg.content.substring(0, 50)}...`
+            );
+          });
         } else {
           console.log(
-            `No chat history found for event ${eventId} or failed to load`
+            `No chat history found for event ${eventId} or failed to load: ${
+              response.error || "Unknown error"
+            }`
           );
 
           // If we have no chat history, set the initial welcome message
-          // But only if we're not already showing messages
-          if (initialMessage && messages.length === 0) {
-            setMessages([
-              {
-                id: `initial-message-${Date.now()}`,
+          if (initialMessage) {
+            console.log("Setting initial welcome message");
+            const initialMsg = {
+              id: `initial-message-${Date.now()}`,
+              role: "assistant" as const,
+              content: initialMessage,
+              parts: [{ type: "text", text: initialMessage }],
+            };
+            setMessages([initialMsg]);
+
+            // Also save this initial message to the database
+            if (eventId) {
+              console.log("Saving initial message to database");
+              saveChatMessage({
+                eventId,
+                messageId: `initial-message-db-${Date.now()}`,
                 role: "assistant",
                 content: initialMessage,
-                parts: [{ type: "text", text: initialMessage }],
-              },
-            ]);
+              }).catch((e) =>
+                console.error("Failed to save initial message:", e)
+              );
+            }
           }
         }
       } catch (error) {
         console.error("Failed to load chat history:", error);
+
+        // Set initial message as fallback
+        if (initialMessage && isMounted) {
+          console.log("Setting initial message as fallback after error");
+          setMessages([
+            {
+              id: `initial-message-${Date.now()}`,
+              role: "assistant",
+              content: initialMessage,
+              parts: [{ type: "text", text: initialMessage }],
+            },
+          ]);
+        }
       } finally {
         if (isMounted) {
           setIsLoadingHistory(false);
@@ -572,13 +700,14 @@ export function RhymeAIChat({
       }
     }
 
+    // Execute immediately to load chat history as soon as possible
     fetchChatHistory();
 
     // Cleanup function to prevent state updates after unmount
     return () => {
       isMounted = false;
     };
-  }, [eventId, initialMessage]); // Remove messages and setMessages from dependencies
+  }, [eventId, initialMessage]); // Remove messages.length to prevent re-fetching when messages change
 
   // Sync chat messages to the database periodically or when component unmounts
   useEffect(() => {
@@ -592,8 +721,10 @@ export function RhymeAIChat({
 
       if (!currentEventId || messages.length === 0 || !isMounted) return;
 
-      // Don't log on every sync to reduce console noise
-      // console.log(`Syncing ${messages.length} messages for event ${currentEventId}`);
+      // Log sync operations for debugging
+      console.log(
+        `Syncing ${messages.length} messages for event ${currentEventId}`
+      );
 
       // Filter and convert messages to the format expected by syncChatMessages
       const chatMessagesToSync = messages
@@ -615,14 +746,20 @@ export function RhymeAIChat({
           if (result.success && isMounted) {
             // Only log on successful sync
             console.log(
-              `Successfully synced ${chatMessagesToSync.length} messages`
+              `Successfully synced ${chatMessagesToSync.length} messages for event ${currentEventId}`
             );
           } else if (!result.success && isMounted) {
-            console.error("Failed to sync messages:", result.error);
+            console.error(
+              `Failed to sync messages for event ${currentEventId}:`,
+              result.error
+            );
           }
         } catch (error) {
           if (isMounted) {
-            console.error("Error during message sync:", error);
+            console.error(
+              `Error during message sync for event ${currentEventId}:`,
+              error
+            );
           }
         }
       }
@@ -652,14 +789,16 @@ export function RhymeAIChat({
         clearInterval(syncInterval);
 
         // Final sync attempt when component unmounts
-        syncAllMessages().catch((e) => console.error("Final sync error:", e));
+        syncAllMessages().catch((e) =>
+          console.error(`Final sync error for event ${currentEventId}:`, e)
+        );
       };
     }
 
     return () => {
       isMounted = false;
     };
-  }, [eventId, createdEventId]); // Remove messages from dependencies
+  }, [eventId, createdEventId, messages]); // Add messages to dependencies to ensure syncing when messages change
 
   // Custom styles for markdown components
   const markdownStyles = {
@@ -970,13 +1109,13 @@ export function RhymeAIChat({
                                   {tool.toolName.replace(/_/g, " ")}
                                 </span>
                               </div>
-
                               {tool.state === "result" ? (
                                 <div className="flex items-center gap-1 text-green-500">
                                   <CircleCheck className="h-3 w-3" />
                                   <span>Successfully processed</span>
                                 </div>
-                              ) : tool.state === "partial-call" ? (
+                              ) : tool.state === "partial-call" ||
+                                tool.state === "call" ? (
                                 <div className="flex items-center gap-1 text-amber-500">
                                   <RotateCw className="h-3 w-3 animate-spin" />
                                   <span>Processing...</span>
@@ -994,7 +1133,6 @@ export function RhymeAIChat({
                                   </span>
                                 </div>
                               )}
-
                               {/* Show a preview of the tool args if available */}
                               {tool.toolName === "store_event_data" && (
                                 <div className="mt-1 overflow-hidden text-ellipsis">
@@ -1022,7 +1160,6 @@ export function RhymeAIChat({
                                   </div>
                                 </div>
                               )}
-
                               {tool.toolName === "generate_script" && (
                                 <div className="mt-1 overflow-hidden text-ellipsis">
                                   <div className="text-2xs text-muted-foreground">
@@ -1116,6 +1253,24 @@ export function RhymeAIChat({
         </div>
 
         <div className="p-4 border-t">
+          {/* Previous conversations panel */}
+          {showPreviousConversations && eventId && (
+            <div className="mb-4">
+              <PreviousConversations
+                eventId={eventId}
+                onSelectMessage={handleSelectPreviousMessage}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowPreviousConversations(false)}
+                className="mt-2 text-xs w-full"
+              >
+                Hide Previous Conversations
+              </Button>
+            </div>
+          )}
+
           <form
             onSubmit={handleFormSubmit}
             className="flex items-center space-x-2"
@@ -1127,11 +1282,23 @@ export function RhymeAIChat({
               className="flex-1"
               disabled={isLoading}
             />
+            {eventId && !showPreviousConversations && (
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                onClick={() => setShowPreviousConversations(true)}
+                className="shrink-0"
+                title="Show previous conversations"
+              >
+                <MessageSquare className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               type="submit"
               size="icon"
               disabled={isLoading || !input.trim()}
-              className="bg-primary hover:bg-primary/90"
+              className="bg-primary hover:bg-primary/90 shrink-0"
             >
               <Send className="h-4 w-4" />
             </Button>
@@ -1181,34 +1348,58 @@ export function RhymeAIChat({
             </div>
           </div>
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={handleGenerateScript}
-                  disabled={!isDataComplete}
-                  className="gap-2"
-                  size="sm"
-                  variant={isDataComplete ? "default" : "outline"}
-                >
-                  {isDataComplete ? (
-                    <ArrowDownCircle className="h-4 w-4" />
-                  ) : (
-                    <ListChecks className="h-4 w-4" />
-                  )}
-                  {isDataComplete ? "Generate Script" : "Collecting Info..."}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {isDataComplete
-                  ? "All required information collected! Click to generate script."
-                  : `Still need ${
-                      eventContext.requiredFields.length -
-                      Object.values(collectedFields).filter(Boolean).length
-                    } more fields`}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <div className="flex gap-2">
+            {/* Show "Next Step" button if we have an eventId */}
+            {eventId && onContinue && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={onContinue}
+                      className="gap-2"
+                      size="sm"
+                      variant="default"
+                    >
+                      <ArrowRight className="h-4 w-4" />
+                      Next Step
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Continue to the next step in event creation
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={handleGenerateScript}
+                    disabled={!isDataComplete}
+                    className="gap-2"
+                    size="sm"
+                    variant={isDataComplete ? "default" : "outline"}
+                  >
+                    {isDataComplete ? (
+                      <ArrowDownCircle className="h-4 w-4" />
+                    ) : (
+                      <ListChecks className="h-4 w-4" />
+                    )}
+                    {isDataComplete ? "Generate Script" : "Collecting Info..."}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isDataComplete
+                    ? "All required information collected! Click to generate script."
+                    : `Still need ${
+                        eventContext.requiredFields.length -
+                        Object.values(collectedFields).filter(Boolean).length
+                      } more fields`}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </CardFooter>
       )}
 

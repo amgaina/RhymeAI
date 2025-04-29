@@ -1,4 +1,8 @@
 import { updateScriptSegment } from "@/app/actions/event/script";
+import {
+  generateAudioForSegment,
+  generateAudioForAllSegments,
+} from "@/app/actions/event/audio-generation";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -35,73 +39,24 @@ export const generateAudioTool = tool({
     console.log("Generating audio for script segment:", params);
 
     try {
-      // Call the TTS API route to generate audio
-      const response = await fetch("/api/tts/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          segmentId: params.segmentId,
-          eventId: params.eventId,
-          voiceSettings: params.voiceSettings,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`TTS API error: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      // Call the server action directly to generate audio
+      const result = await generateAudioForSegment(
+        params.eventId,
+        params.segmentId
+      );
 
       if (result.success) {
-        // Update the segment with the audio URL
-        const updateResult = await updateScriptSegment(params.segmentId, {
-          audio_url: result.audioUrl,
-          status: "generated",
-        });
-
-        if (updateResult.success) {
-          return {
-            success: true,
-            segmentId: params.segmentId,
-            audioUrl: result.audioUrl,
-            message: "Audio generated and segment updated successfully",
-          };
-        } else {
-          return {
-            success: false,
-            error: updateResult.error || "Failed to update segment with audio",
-          };
-        }
+        return {
+          success: true,
+          segmentId: params.segmentId,
+          audioUrl: result.audioUrl,
+          message: "Audio generated and segment updated successfully",
+        };
       } else {
         throw new Error(result.error || "Failed to generate audio");
       }
     } catch (error) {
       console.error("Error generating audio:", error);
-      // Fallback to a mock URL if the API call fails
-      try {
-        const audioUrl = `https://api.example.com/audio/${
-          params.segmentId
-        }-${Date.now()}.mp3`;
-
-        // Update the segment with the mock audio URL
-        const updateResult = await updateScriptSegment(params.segmentId, {
-          audio_url: audioUrl,
-          status: "generated",
-        });
-
-        if (updateResult.success) {
-          return {
-            success: true,
-            segmentId: params.segmentId,
-            audioUrl,
-            message: "Audio generated with fallback URL and segment updated",
-          };
-        }
-      } catch (fallbackError) {
-        console.error("Error with fallback audio generation:", fallbackError);
-      }
 
       return {
         success: false,
@@ -145,76 +100,20 @@ export const batchGenerateAudioTool = tool({
     console.log("Batch generating audio for segments:", params);
 
     try {
-      // Process each segment in sequence
-      const results = await Promise.all(
-        params.segmentIds.map(async (segmentId) => {
-          try {
-            // Call the TTS API route to generate audio
-            const response = await fetch("/api/tts/generate", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                segmentId,
-                eventId: params.eventId,
-                voiceSettings: params.voiceSettings,
-              }),
-            });
+      // Call the server action directly to generate audio for all segments
+      const result = await generateAudioForAllSegments(params.eventId);
 
-            if (!response.ok) {
-              throw new Error(`TTS API error: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-
-            if (result.success) {
-              // Update the segment with the audio URL
-              const updateResult = await updateScriptSegment(segmentId, {
-                audio_url: result.audioUrl,
-                status: "generated",
-              });
-
-              if (updateResult.success) {
-                return {
-                  success: true,
-                  segmentId,
-                  audioUrl: result.audioUrl,
-                };
-              } else {
-                return {
-                  success: false,
-                  segmentId,
-                  error: updateResult.error,
-                };
-              }
-            } else {
-              throw new Error(result.error || "Failed to generate audio");
-            }
-          } catch (error) {
-            console.error(
-              `Error generating audio for segment ${segmentId}:`,
-              error
-            );
-            return {
-              success: false,
-              segmentId,
-              error: error instanceof Error ? error.message : "Unknown error",
-            };
-          }
-        })
-      );
-
-      // Count successful generations
-      const successCount = results.filter((r) => r.success).length;
-
-      return {
-        success: successCount > 0,
-        results,
-        successCount,
-        totalCount: params.segmentIds.length,
-        message: `Successfully generated audio for ${successCount} of ${params.segmentIds.length} segments`,
-      };
+      if (result.success) {
+        return {
+          success: true,
+          results: result.results,
+          successCount: result.successCount,
+          totalCount: result.processedCount,
+          message: result.message,
+        };
+      } else {
+        throw new Error(result.error || "Failed to generate audio");
+      }
     } catch (error) {
       console.error("Error in batch audio generation:", error);
       return {

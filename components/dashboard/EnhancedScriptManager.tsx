@@ -18,12 +18,19 @@ import {
   Loader2,
   RefreshCcw,
   PlusCircle,
+  MessageSquare,
+  ArrowDownUp,
+  Music,
+  Mic,
 } from "lucide-react";
 import ScriptManager from "./ScriptManager";
 import ScriptTTSGenerator from "./ScriptTTSGenerator";
 import DOMBasedAudioPlayer from "./DOMBasedAudioPlayer";
+import { RhymeAIChat } from "@/components/RhymeAIChat";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
 interface EnhancedScriptManagerProps {
+  eventId: number;
   segments: ScriptSegment[];
   onUpdateSegment: (segmentId: number, content: string) => void;
   onGenerateAudio: (segmentId: number) => Promise<void>;
@@ -33,11 +40,16 @@ interface EnhancedScriptManagerProps {
   onGenerateScript?: () => void;
   onGenerateAllTTS?: () => Promise<void>;
   onGenerateSingleTTS?: (segmentId: number) => Promise<void>;
+  onReorderSegments?: (segments: ScriptSegment[]) => void;
   isGeneratingScript?: boolean;
+  isGeneratingAudio?: boolean;
   hasLayout?: boolean;
+  eventName?: string;
+  eventType?: string;
 }
 
 export default function EnhancedScriptManager({
+  eventId,
   segments,
   onUpdateSegment,
   onGenerateAudio,
@@ -47,10 +59,16 @@ export default function EnhancedScriptManager({
   onGenerateScript,
   onGenerateAllTTS,
   onGenerateSingleTTS,
+  onReorderSegments,
   isGeneratingScript = false,
+  isGeneratingAudio = false,
   hasLayout = true,
+  eventName = "Event",
+  eventType = "event",
 }: EnhancedScriptManagerProps) {
   const [activeTab, setActiveTab] = useState("edit");
+  const [showAIChat, setShowAIChat] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [selectedAudioPreview, setSelectedAudioPreview] = useState<{
     audioUrl: string;
     title: string;
@@ -73,6 +91,29 @@ export default function EnhancedScriptManager({
     });
   };
 
+  // Handle drag and drop reordering
+  const handleDragEnd = (result: any) => {
+    setIsDragging(false);
+
+    // Dropped outside the list
+    if (!result.destination || !segments) return;
+
+    const items = Array.from(segments);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+
+    // Update order property for each item
+    const updatedItems = items.map((item, index) => ({
+      ...item,
+      order: index + 1,
+    }));
+
+    // Call the reorder callback if provided
+    if (onReorderSegments) {
+      onReorderSegments(updatedItems);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -88,6 +129,14 @@ export default function EnhancedScriptManager({
               </CardDescription>
             </div>
             <div className="flex gap-2">
+              <Button
+                onClick={() => setShowAIChat(!showAIChat)}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <MessageSquare className="h-4 w-4" />
+                {showAIChat ? "Hide AI Chat" : "AI Assistant"}
+              </Button>
               {onGenerateScript && (
                 <Button
                   variant="default"
@@ -117,20 +166,48 @@ export default function EnhancedScriptManager({
           </div>
         </CardHeader>
         <CardContent>
+          {/* AI Chat Assistant */}
+          {showAIChat && (
+            <div className="mb-6">
+              <RhymeAIChat
+                eventId={eventId}
+                title="Script Assistant"
+                initialMessage={`I'm here to help you with the script for "${eventName}". You can ask me to suggest content, improve wording, or provide ideas for your ${eventType}.`}
+                placeholder="Ask about script content..."
+                eventContext={{
+                  purpose: "script-assistance",
+                  contextType: "general-assistant",
+                  requiredFields: [],
+                  additionalInfo: {
+                    eventName: eventName || "",
+                    eventType: eventType || "",
+                    scriptSegments: segments || [],
+                  },
+                }}
+                preserveChat={true}
+              />
+            </div>
+          )}
+
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-4">
               <TabsTrigger value="edit">Edit Script</TabsTrigger>
               <TabsTrigger value="tts">Generate Audio</TabsTrigger>
             </TabsList>
             <TabsContent value="edit">
-              <ScriptManager
-                segments={segments}
-                onUpdateSegment={onUpdateSegment}
-                onGenerateAudio={onGenerateAudio}
-                onDeleteSegment={onDeleteSegment}
-                onAddSegment={onAddSegment}
-                onRegenerateAll={onRegenerateAll}
-              />
+              <DragDropContext
+                onDragStart={() => setIsDragging(true)}
+                onDragEnd={handleDragEnd}
+              >
+                <ScriptManager
+                  segments={segments}
+                  onUpdateSegment={onUpdateSegment}
+                  onGenerateAudio={onGenerateAudio}
+                  onDeleteSegment={onDeleteSegment}
+                  onAddSegment={onAddSegment}
+                  onRegenerateAll={onRegenerateAll}
+                />
+              </DragDropContext>
             </TabsContent>
             <TabsContent value="tts">
               {onGenerateAllTTS && onGenerateSingleTTS && (
@@ -159,7 +236,7 @@ export default function EnhancedScriptManager({
         <DOMBasedAudioPlayer
           title={selectedAudioPreview.title}
           scriptText={selectedAudioPreview.scriptText}
-          audioUrl={selectedAudioPreview.audioUrl}
+          audioS3key={selectedAudioPreview.audioUrl}
           segmentId={selectedAudioPreview.segmentId} // Pass the segment ID for presigned URL
         />
       )}

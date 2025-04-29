@@ -1,6 +1,15 @@
 "use client";
 
-import { Wrench, CircleCheck, CircleDot, RotateCw } from "lucide-react";
+import {
+  Wrench,
+  CircleCheck,
+  CircleDot,
+  RotateCw,
+  Volume2,
+} from "lucide-react";
+import { useState } from "react";
+import { ChatAudioElement } from "./ChatAudioElement";
+import { Button } from "@/components/ui/button";
 
 interface ChatToolDisplayProps {
   toolInvocations: any[];
@@ -59,11 +68,23 @@ export function ChatToolDisplay({
 }
 
 function renderToolSpecificContent(tool: any, eventId?: number) {
+  // State for audio playback
+  const [showAudioPlayer, setShowAudioPlayer] = useState(false);
+
   // Parse tool args if they're a string
   let parsedArgs: any = {};
   try {
     parsedArgs =
       typeof tool.args === "string" ? JSON.parse(tool.args) : tool.args;
+
+    // Also try to parse the output if it's a string
+    if (tool.output && typeof tool.output === "string") {
+      try {
+        tool.parsedOutput = JSON.parse(tool.output);
+      } catch (e) {
+        // Ignore parsing errors for output
+      }
+    }
   } catch (e) {
     console.error("Error parsing tool args:", e);
     return null;
@@ -125,21 +146,96 @@ function renderToolSpecificContent(tool: any, eventId?: number) {
       );
 
     case "generateAudioTool":
+    case "generate_audio":
+      // Get audio URL from either args or output
+      let audioUrl;
+
+      // Try to parse the output if it's a string
+      if (tool.output && typeof tool.output === "string") {
+        try {
+          const parsedOutput = JSON.parse(tool.output);
+          if (parsedOutput.success && parsedOutput.audioUrl) {
+            audioUrl = parsedOutput.audioUrl;
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
+
+      // Fallback to other sources if we couldn't get the URL from output
+      if (!audioUrl) {
+        audioUrl =
+          parsedArgs?.audioUrl ||
+          tool.parsedOutput?.audioUrl ||
+          (tool.parsedOutput?.success && tool.parsedOutput?.s3Key
+            ? tool.parsedOutput.audioUrl
+            : null);
+      }
+
+      // Get segment ID
+      const segmentId =
+        parsedArgs?.segmentId ||
+        (tool.output && typeof tool.output === "string"
+          ? JSON.parse(tool.output)?.segmentId
+          : null) ||
+        tool.parsedOutput?.segmentId ||
+        "Unknown";
+
       return (
         <div className="mt-1 overflow-hidden">
           <div className="text-2xs text-muted-foreground">
-            Generated audio for segment: {parsedArgs?.segmentId || "Unknown"}
+            Generated audio for segment: {segmentId}
           </div>
-          {parsedArgs?.audioUrl && (
+
+          {audioUrl ? (
+            <div className="mt-2">
+              {showAudioPlayer ? (
+                <ChatAudioElement
+                  audioUrl={audioUrl}
+                  segmentId={segmentId}
+                  compact={true}
+                />
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setShowAudioPlayer(true)}
+                >
+                  <Volume2 className="h-3 w-3 mr-1" />
+                  Play Audio
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="text-2xs text-muted-foreground mt-1">
+              Audio URL not available
+            </div>
+          )}
+        </div>
+      );
+
+    case "generate_batch_audio":
+    case "generateBatchAudioTool":
+      return (
+        <div className="mt-1 overflow-hidden">
+          <div className="text-2xs text-muted-foreground">
+            Generated audio for multiple segments
+          </div>
+          <div className="text-2xs text-muted-foreground">
+            Event ID:{" "}
+            {parsedArgs?.eventId ||
+              tool.parsedOutput?.eventId ||
+              eventId ||
+              "Unknown"}
+          </div>
+          {(tool.parsedOutput?.success || parsedArgs?.success) && (
             <div className="text-2xs text-muted-foreground">
-              <a
-                href={parsedArgs.audioUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-primary"
-              >
-                Listen to audio
-              </a>
+              Successfully generated{" "}
+              {tool.parsedOutput?.successCount ||
+                parsedArgs?.successCount ||
+                "multiple"}{" "}
+              audio segments
             </div>
           )}
         </div>

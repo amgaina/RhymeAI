@@ -3,7 +3,7 @@
 import * as React from "react";
 import * as ToastPrimitives from "@radix-ui/react-toast";
 import { cva, type VariantProps } from "class-variance-authority";
-import { X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,8 @@ const toastVariants = cva(
           "border bg-white text-slate-950 dark:bg-slate-950 dark:text-slate-50",
         destructive:
           "destructive group border-red-500 bg-red-500 text-slate-50 dark:border-red-900 dark:bg-red-900 dark:text-slate-50",
+        loading:
+          "loading group border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200",
       },
     },
     defaultVariants: {
@@ -92,13 +94,27 @@ ToastClose.displayName = ToastPrimitives.Close.displayName;
 const ToastTitle = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Title>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Title>
->(({ className, ...props }, ref) => (
-  <ToastPrimitives.Title
-    ref={ref}
-    className={cn("text-sm font-semibold", className)}
-    {...props}
-  />
-));
+>(({ className, ...props }, ref) => {
+  // Check if this is a loading toast by looking at the parent's class
+  const isLoading = props.children === "Processing...";
+
+  return (
+    <ToastPrimitives.Title
+      ref={ref}
+      className={cn("text-sm font-semibold", className)}
+      {...props}
+    >
+      {isLoading ? (
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Processing...</span>
+        </div>
+      ) : (
+        props.children
+      )}
+    </ToastPrimitives.Title>
+  );
+});
 ToastTitle.displayName = ToastPrimitives.Title.displayName;
 
 const ToastDescription = React.forwardRef<
