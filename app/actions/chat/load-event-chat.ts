@@ -4,17 +4,24 @@ import { db } from "@/lib/db";
 import { auth } from "@clerk/nextjs/server";
 
 /**
- * Loads all chat messages for a specific event
+ * Loads chat messages for a specific event with pagination
  * This is used to display the chat history when a user returns to an event
+ * By default, it returns only the last 10 messages
  */
-export async function loadEventChatHistory(eventId: number) {
+export async function loadEventChatHistory(
+  eventId: number,
+  limit: number = 10,
+  page: number = 0
+) {
   try {
     const { userId } = await auth();
     if (!userId) {
       return { success: false, error: "Unauthorized" };
     }
 
-    console.log(`Loading chat history for event ${eventId} and user ${userId}`);
+    console.log(
+      `Loading chat history for event ${eventId} and user ${userId} (limit: ${limit}, page: ${page})`
+    );
 
     // Get the event to check if it exists and belongs to the user
     const event = await db.events.findFirst({
@@ -31,7 +38,23 @@ export async function loadEventChatHistory(eventId: number) {
       return { success: false, error: "Event not found or access denied" };
     }
 
-    // Get all chat messages for this event
+    // Get total count of messages for this event
+    const totalCount = await db.chat_messages.count({
+      where: {
+        event_id: eventId,
+        user_id: userId,
+      },
+    });
+
+    // Calculate skip based on page and limit
+    // For the most recent messages, we need to skip from the beginning
+    const skip = Math.max(0, totalCount - limit * (page + 1));
+
+    // Adjust the actual limit to not go below 0
+    const actualLimit = Math.min(limit, totalCount - skip);
+
+    // Get chat messages for this event with pagination
+    // We're ordering by created_at ASC and using skip/take to get the most recent messages
     const messages = await db.chat_messages.findMany({
       where: {
         event_id: eventId,
@@ -40,10 +63,12 @@ export async function loadEventChatHistory(eventId: number) {
       orderBy: {
         created_at: "asc",
       },
+      skip: skip,
+      take: actualLimit > 0 ? actualLimit : undefined,
     });
 
     console.log(
-      `Found ${messages.length} messages in the database for event ${eventId}`
+      `Found ${messages.length} messages out of ${totalCount} total for event ${eventId}`
     );
 
     // Log the first few messages for debugging
@@ -79,6 +104,12 @@ export async function loadEventChatHistory(eventId: number) {
     return {
       success: true,
       messages: chatMessages,
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        hasMore: skip > 0,
+      },
       eventDetails: {
         id: event.event_id,
         title: event.title,

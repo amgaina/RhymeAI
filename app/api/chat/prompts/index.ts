@@ -1,57 +1,53 @@
-import { eventCreationPrompt } from './event-creation';
-import { scriptGenerationPrompt } from './script-generation';
-import { voiceSelectionPrompt } from './voice-selection';
-import { eventLayoutPrompt } from './event-layout';
-import { audioGenerationPrompt } from './audio-generation';
-import { presentationPrompt } from './presentation';
+import { generateEventAssistancePrompt } from "./event-assistance";
+import { scriptGenerationPrompt } from "./script-generation";
+import { voiceSelectionPrompt } from "./voice-selection";
+import { eventLayoutPrompt } from "./event-layout";
+import { audioGenerationPrompt } from "./audio-generation";
+import { presentationPrompt } from "./presentation";
 
 /**
- * Generates system prompts based on context type
+ * Generates a system prompt based on context type
  */
 export function generateSystemPrompt(
   contextType: string,
-  requiredFields?: string[]
+  requiredFields: string[] = [],
+  additionalInfo: any = {}
 ) {
+  // Switch based on context type
   switch (contextType) {
+    case "event-assistance":
+      return generateEventAssistancePrompt(requiredFields, additionalInfo);
+
     case "event-creation":
-      return eventCreationPrompt(requiredFields);
-    
+      return generateEventAssistancePrompt(requiredFields, additionalInfo);
+
     case "event-layout":
       return eventLayoutPrompt();
-    
+
     case "script-generation":
       return scriptGenerationPrompt();
-    
+
     case "voice-selection":
       return voiceSelectionPrompt();
-    
+
     case "audio-generation":
       return audioGenerationPrompt();
-    
+
     case "presentation":
       return presentationPrompt();
-    
+
     default:
-      return `You are the RhymeAI Emcee Assistant, exclusively focused on helping create professional event scripts and presentations.
-
-Your primary functions:
-- Guide users through event information collection
-- Generate customized event layouts based on event type
-- Create professional script segments from the layout
-- Generate high-quality audio using text-to-speech
-- Build engaging presentations with synchronized audio and visuals
-- Help refine and improve content at each step
-
-Focus on providing practical, actionable assistance for creating effective event content.`;
+      return `You are RhymeAI, an AI assistant for event management.
+      Help the user with their event planning needs in a friendly and professional manner.`;
   }
 }
 
-// Export all prompts for direct access
+// Export individual prompt generators for direct use if needed
 export {
-  eventCreationPrompt,
+  generateEventAssistancePrompt,
   scriptGenerationPrompt,
   voiceSelectionPrompt,
   eventLayoutPrompt,
   audioGenerationPrompt,
-  presentationPrompt
+  presentationPrompt,
 };

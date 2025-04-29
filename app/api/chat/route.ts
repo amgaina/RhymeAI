@@ -22,10 +22,15 @@ function transformMessages(incomingMessages: any[]): Message[] {
 /**
  * Creates a system message based on context
  */
-function createSystemMessage(eventContext: any): Message {
+function createSystemMessage(
+  contextType: string,
+  requiredFields: any,
+  additionalInfo?: any
+): Message {
   const systemPrompt = generateSystemPrompt(
-    eventContext?.contextType,
-    eventContext?.requiredFields
+    contextType,
+    requiredFields,
+    additionalInfo
   );
 
   return {
@@ -44,20 +49,43 @@ export async function POST(req: Request) {
     // Transform messages to include an 'id' property
     const messages = transformMessages(incomingMessages);
 
-    // Generate a context-aware system prompt
-    const systemMessage = createSystemMessage(eventContext);
+    // Generate a context-aware system prompt with additionalInfo
+    const systemMessage = createSystemMessage(
+      eventContext.contextType,
+      eventContext.requiredFields,
+      eventContext.additionalInfo // Pass the additionalInfo to the prompt generator
+    );
 
     // Combine system message with user messages
     const messagesWithSystem = [systemMessage, ...messages];
 
+    console.log(
+      "Event ID from context:",
+      eventContext?.additionalInfo?.eventId || "No event ID"
+    );
+
     // Optimized Gemini model configuration for script generation
     const result = streamText({
-      model: google("gemini-2.5-pro-preview-03-25", {}),
+      model: google("gemini-2.5-pro-exp-03-25", {}),
       tools: {
-        // Event tools
+        // Event tools - Create and Store
         store_event_data: eventTools.storeEventDataTool,
+
+        // Event tools - Read
+        get_events: eventTools.getEventsTool,
+        list_events: eventTools.listEventsTool,
+        get_event_details: eventTools.getEventDetailsTool,
+        get_event_layout: eventTools.getEventLayoutTool,
+        get_event_script: eventTools.getEventScriptTool,
+        get_voice_settings: eventTools.getVoiceSettingsTool,
+
+        // Event tools - Update
         generate_event_layout: eventTools.generateEventLayoutTool,
         update_layout_segment: eventTools.updateLayoutSegmentTool,
+        update_voice_settings: eventTools.updateVoiceSettingsTool,
+        update_script_segment: eventTools.updateScriptSegmentTool,
+
+        // Event tools - Finalize
         finalize_event: eventTools.finalizeEventTool,
 
         // Script tools
@@ -77,26 +105,9 @@ export async function POST(req: Request) {
     });
 
     // Include custom metadata for client-side synchronization
-    return result.toDataStreamResponse({
-      sendSources: true,
-      headers: {
-        "X-RhymeAI-Sync-Token": uuidv4(), // Adds a sync token for client components
-        "X-RhymeAI-Context-Type": eventContext?.contextType || "general",
-      },
-    });
+    return result.toDataStreamResponse();
   } catch (error) {
-    console.error("Chat API error:", error);
-    return new Response(
-      JSON.stringify({
-        error: "Failed to process chat request",
-        details: error instanceof Error ? error.message : "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    console.error("Error processing POST request:", error);
+    return new Response("Internal Server Error", { status: 500 });
   }
 }

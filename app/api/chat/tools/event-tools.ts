@@ -10,7 +10,10 @@ import { tool } from "ai";
 import { z } from "zod";
 import { google } from "@ai-sdk/google";
 import { generateText } from "ai";
-import { LayoutSegment } from "@/types/layout";
+import { LayoutSegment, EventLayout } from "@/types/layout";
+import { ScriptSegment, VoiceSettings } from "@/types/event";
+import { getEvents, getEvent } from "@/app/actions/event/utilities";
+import { getScriptSegments } from "@/app/actions/event/script";
 
 // We now use the LayoutSegment type from @/types/layout
 
@@ -84,19 +87,23 @@ export const storeEventDataTool = tool({
     formData.append("voiceType", voicePreference?.tone || "professional");
     formData.append("accent", voicePreference?.accent || "american");
 
+    // Convert speed to a value between 0.25 and 2.0 for Google TTS
+    // Map "slow", "medium", "fast" to appropriate values within the valid range
     const speedValue =
       voicePreference?.speed === "fast"
-        ? "80"
+        ? "75" // Maps to ~1.5 in TTS (faster but not too fast)
         : voicePreference?.speed === "slow"
-        ? "20"
-        : "50";
+        ? "25" // Maps to ~0.6 in TTS (slower but still understandable)
+        : "50"; // Maps to ~1.0 in TTS (normal speed)
 
+    // Convert pitch to a value between -20 and 20 for Google TTS
+    // Map "low", "medium", "high" to appropriate values within the valid range
     const pitchValue =
       voicePreference?.pitch === "high"
-        ? "80"
+        ? "70" // Maps to ~8 in TTS (higher but not too high)
         : voicePreference?.pitch === "low"
-        ? "20"
-        : "50";
+        ? "30" // Maps to ~-8 in TTS (lower but not too low)
+        : "50"; // Maps to 0 in TTS (neutral pitch)
 
     formData.append("speakingRate", speedValue);
     formData.append("pitch", pitchValue);
@@ -746,12 +753,646 @@ export const eventLayoutTools = [
   },
 ];
 
+/**
+ * Tool for getting all events for the current user
+ */
+export const getEventsTool = tool({
+  description: "Get all events for the current user",
+  parameters: z.object({}),
+  execute: async () => {
+    try {
+      const result = await getEvents();
+
+      if (result.success && result.events) {
+        return {
+          success: true,
+          events: result.events.map((event) => ({
+            id: event.event_id,
+            name: event.title,
+            type: event.event_type,
+            date: event.event_date,
+            status: event.status,
+            location: event.location || null,
+            description: event.description || null,
+            createdAt: event.created_at,
+            updatedAt: event.updated_at,
+          })),
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error || "Failed to get events",
+        };
+      }
+    } catch (error) {
+      console.error("Error getting events:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get events",
+      };
+    }
+  },
+});
+
+/**
+ * Tool for getting a specific event by ID
+ */
+export const getEventDetailsTool = tool({
+  description: "Get detailed information about a specific event",
+  parameters: z.object({
+    eventId: z.string().describe("The ID of the event to retrieve"),
+  }),
+  execute: async (params) => {
+    try {
+      const eventIdNum = parseInt(params.eventId, 10);
+      if (isNaN(eventIdNum)) {
+        return {
+          success: false,
+          error: "Invalid event ID format",
+        };
+      }
+
+      const result = await getEvent(eventIdNum);
+
+      if (result.success && result.event) {
+        // Parse voice settings
+        const voiceSettings =
+          typeof result.event.voice_settings === "string"
+            ? JSON.parse(result.event.voice_settings as string)
+            : result.event.voice_settings || {};
+
+        return {
+          success: true,
+          event: {
+            id: result.event.event_id,
+            name: result.event.title,
+            type: result.event.event_type,
+            date: result.event.event_date,
+            status: result.event.status,
+            location: result.event.location || null,
+            description: result.event.description || null,
+            expectedAttendees: result.event.expected_attendees,
+            voiceSettings: voiceSettings,
+            language: result.event.language,
+            createdAt: result.event.created_at,
+            updatedAt: result.event.updated_at,
+          },
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error || "Failed to get event details",
+        };
+      }
+    } catch (error) {
+      console.error("Error getting event details:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get event details",
+      };
+    }
+  },
+});
+
+/**
+ * Tool for getting the layout of a specific event
+ */
+export const getEventLayoutTool = tool({
+  description: "Get the layout segments for a specific event",
+  parameters: z.object({
+    eventId: z
+      .string()
+      .describe("The ID of the event to retrieve the layout for"),
+  }),
+  execute: async (params) => {
+    try {
+      const eventIdNum = parseInt(params.eventId, 10);
+      if (isNaN(eventIdNum)) {
+        return {
+          success: false,
+          error: "Invalid event ID format",
+        };
+      }
+
+      // Get the event with layout from the database
+      const { db } = await import("@/lib/db");
+      const event = await db.events.findUnique({
+        where: { event_id: eventIdNum },
+        include: {
+          layout: {
+            include: {
+              segments: {
+                orderBy: {
+                  order: "asc",
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!event) {
+        return {
+          success: false,
+          error: "Event not found",
+        };
+      }
+
+      if (!event.layout) {
+        // Check for legacy JSON layout
+        if (event.event_layout) {
+          const jsonLayout =
+            typeof event.event_layout === "string"
+              ? JSON.parse(event.event_layout as string)
+              : event.event_layout;
+
+          return {
+            success: true,
+            layout: {
+              id: "legacy",
+              eventId: event.event_id,
+              segments: jsonLayout.segments || [],
+              totalDuration: jsonLayout.totalDuration || 0,
+              lastUpdated:
+                event.updated_at?.toISOString() || new Date().toISOString(),
+            },
+            isLegacy: true,
+          };
+        }
+
+        return {
+          success: false,
+          error: "Event layout not found",
+        };
+      }
+
+      // Format the layout segments
+      const formattedSegments = event.layout.segments.map((segment) => ({
+        id: segment.id,
+        name: segment.name,
+        type: segment.type,
+        description: segment.description,
+        duration: segment.duration,
+        order: segment.order,
+        startTime: segment.start_time || undefined,
+        endTime: segment.end_time || undefined,
+      }));
+
+      return {
+        success: true,
+        layout: {
+          id: event.layout.id,
+          eventId: event.layout.event_id,
+          segments: formattedSegments,
+          totalDuration: event.layout.total_duration,
+          lastUpdated: event.layout.updated_at.toISOString(),
+          version: event.layout.layout_version,
+        },
+      };
+    } catch (error) {
+      console.error("Error getting event layout:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get event layout",
+      };
+    }
+  },
+});
+
+/**
+ * Tool for getting script segments for a specific event
+ */
+export const getEventScriptTool = tool({
+  description: "Get the script segments for a specific event",
+  parameters: z.object({
+    eventId: z
+      .string()
+      .describe("The ID of the event to retrieve the script for"),
+  }),
+  execute: async (params) => {
+    try {
+      // Call the server action to get script segments
+      const result = await getScriptSegments(params.eventId);
+
+      if (result.success && result.segments) {
+        // Format the script segments
+        const formattedSegments = result.segments.map((segment) => ({
+          id: segment.id,
+          type: segment.segment_type,
+          content: segment.content,
+          audioUrl: segment.audio_url || null,
+          status: segment.status,
+          timing: segment.timing,
+          order: segment.order,
+        }));
+
+        return {
+          success: true,
+          segments: formattedSegments,
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error || "Failed to get script segments",
+        };
+      }
+    } catch (error) {
+      console.error("Error getting script segments:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get script segments",
+      };
+    }
+  },
+});
+
+/**
+ * Tool for getting voice settings for a specific event
+ */
+export const getVoiceSettingsTool = tool({
+  description: "Get the voice settings for a specific event",
+  parameters: z.object({
+    eventId: z
+      .string()
+      .describe("The ID of the event to retrieve voice settings for"),
+  }),
+  execute: async (params) => {
+    try {
+      const eventIdNum = parseInt(params.eventId, 10);
+      if (isNaN(eventIdNum)) {
+        return {
+          success: false,
+          error: "Invalid event ID format",
+        };
+      }
+
+      // Get the event from the database
+      const { db } = await import("@/lib/db");
+      const event = await db.events.findUnique({
+        where: { event_id: eventIdNum },
+        select: {
+          voice_settings: true,
+          language: true,
+        },
+      });
+
+      if (!event) {
+        return {
+          success: false,
+          error: "Event not found",
+        };
+      }
+
+      // Parse voice settings
+      const voiceSettings =
+        typeof event.voice_settings === "string"
+          ? JSON.parse(event.voice_settings as string)
+          : event.voice_settings || {};
+
+      return {
+        success: true,
+        voiceSettings: {
+          ...voiceSettings,
+          language: event.language,
+        },
+      };
+    } catch (error) {
+      console.error("Error getting voice settings:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get voice settings",
+      };
+    }
+  },
+});
+
+/**
+ * Tool for updating voice settings for a specific event
+ */
+export const updateVoiceSettingsTool = tool({
+  description: "Update the voice settings for a specific event",
+  parameters: z.object({
+    eventId: z
+      .string()
+      .describe("The ID of the event to update voice settings for"),
+    voiceSettings: z.object({
+      gender: z.enum(["male", "female", "neutral"]).optional(),
+      tone: z
+        .enum(["professional", "casual", "energetic", "calm", "authoritative"])
+        .optional(),
+      accent: z
+        .enum(["american", "british", "australian", "indian", "neutral"])
+        .optional(),
+      speed: z.enum(["slow", "medium", "fast"]).optional(),
+      pitch: z.enum(["low", "medium", "high"]).optional(),
+      language: z.string().optional(),
+    }),
+  }),
+  execute: async (params) => {
+    try {
+      const eventIdNum = parseInt(params.eventId, 10);
+      if (isNaN(eventIdNum)) {
+        return {
+          success: false,
+          error: "Invalid event ID format",
+        };
+      }
+
+      // Get the current event to merge voice settings
+      const { db } = await import("@/lib/db");
+      const event = await db.events.findUnique({
+        where: { event_id: eventIdNum },
+        select: {
+          voice_settings: true,
+        },
+      });
+
+      if (!event) {
+        return {
+          success: false,
+          error: "Event not found",
+        };
+      }
+
+      // Parse current voice settings
+      const currentVoiceSettings =
+        typeof event.voice_settings === "string"
+          ? JSON.parse(event.voice_settings as string)
+          : event.voice_settings || {};
+
+      // Merge with new settings
+      const updatedVoiceSettings = {
+        ...currentVoiceSettings,
+        ...params.voiceSettings,
+      };
+
+      // Update language separately if provided
+      const languageUpdate = params.voiceSettings.language
+        ? { language: params.voiceSettings.language }
+        : {};
+
+      // Update the event
+      const updatedEvent = await db.events.update({
+        where: { event_id: eventIdNum },
+        data: {
+          voice_settings: updatedVoiceSettings,
+          ...languageUpdate,
+          updated_at: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        voiceSettings: {
+          ...updatedVoiceSettings,
+          language: updatedEvent.language,
+        },
+        message: "Voice settings updated successfully",
+      };
+    } catch (error) {
+      console.error("Error updating voice settings:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to update voice settings",
+      };
+    }
+  },
+});
+
+/**
+ * Tool for updating a script segment
+ */
+export const updateScriptSegmentTool = tool({
+  description: "Update a specific script segment",
+  parameters: z.object({
+    eventId: z
+      .string()
+      .describe("The ID of the event containing the script segment"),
+    segmentId: z.string().describe("The ID of the script segment to update"),
+    content: z
+      .string()
+      .optional()
+      .describe("The new content for the script segment"),
+    status: z
+      .enum([
+        "draft",
+        "editing",
+        "generating",
+        "generated",
+        "failed",
+        "approved",
+      ])
+      .optional(),
+  }),
+  execute: async (params) => {
+    try {
+      const eventIdNum = parseInt(params.eventId, 10);
+      const segmentIdNum = parseInt(params.segmentId, 10);
+
+      if (isNaN(eventIdNum) || isNaN(segmentIdNum)) {
+        return {
+          success: false,
+          error: "Invalid ID format",
+        };
+      }
+
+      // Prepare update data
+      const updateData: any = {};
+      if (params.content !== undefined) updateData.content = params.content;
+      if (params.status !== undefined) updateData.status = params.status;
+
+      // Update the script segment
+      const { db } = await import("@/lib/db");
+      const updatedSegment = await db.script_segments.update({
+        where: {
+          id: segmentIdNum,
+          event_id: eventIdNum,
+        },
+        data: {
+          ...updateData,
+          updated_at: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        segment: {
+          id: updatedSegment.id,
+          type: updatedSegment.segment_type,
+          content: updatedSegment.content,
+          audioUrl: updatedSegment.audio_url || null,
+          status: updatedSegment.status,
+          timing: updatedSegment.timing,
+          order: updatedSegment.order,
+        },
+        message: "Script segment updated successfully",
+      };
+    } catch (error) {
+      console.error("Error updating script segment:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to update script segment",
+      };
+    }
+  },
+});
+
+/**
+ * Tool for listing all events
+ */
+export const listEventsTool = tool({
+  description:
+    "List all events for the current user with their status and basic information",
+  parameters: z.object({
+    status: z
+      .enum(["all", "draft", "ready", "completed"])
+      .optional()
+      .describe("Filter events by status"),
+    limit: z
+      .number()
+      .optional()
+      .describe("Limit the number of events returned"),
+    sortBy: z
+      .enum(["date", "name", "status", "created"])
+      .optional()
+      .describe("Sort events by this field"),
+    sortOrder: z
+      .enum(["asc", "desc"])
+      .optional()
+      .describe("Sort order (ascending or descending)"),
+  }),
+  execute: async (params) => {
+    try {
+      // Get the events from the database
+      const { db } = await import("@/lib/db");
+      const { auth } = await import("@clerk/nextjs/server");
+
+      const { userId } = await auth();
+      if (!userId) {
+        return {
+          success: false,
+          error: "Unauthorized",
+        };
+      }
+
+      // Build the query
+      const query: any = {
+        where: {
+          user_id: userId,
+        },
+        orderBy: {},
+        include: {
+          layout: true,
+          segments: true,
+        },
+      };
+
+      // Add status filter if provided
+      if (params.status && params.status !== "all") {
+        query.where.status = params.status;
+      }
+
+      // Add sorting
+      const sortField = params.sortBy || "created_at";
+      const sortOrder = params.sortOrder || "desc";
+
+      // Map the sort field to the database field
+      let dbSortField = "created_at";
+      if (sortField === "date") dbSortField = "event_date";
+      else if (sortField === "name") dbSortField = "title";
+      else if (sortField === "status") dbSortField = "status";
+      else if (sortField === "created") dbSortField = "created_at";
+
+      query.orderBy[dbSortField] = sortOrder;
+
+      // Add limit if provided
+      if (params.limit) {
+        query.take = params.limit;
+      }
+
+      // Get the events
+      const events = await db.events.findMany(query);
+
+      // Format the events
+      const formattedEvents = events.map((event: any) => ({
+        id: event.event_id,
+        name: event.title,
+        type: event.event_type,
+        date: event.event_date,
+        status: event.status,
+        location: event.location || null,
+        description: event.description || null,
+        createdAt: event.created_at,
+        updatedAt: event.updated_at,
+        // Check if layout exists by checking the layout relation
+        hasLayout: !!event.layout,
+        // Check if script exists by checking if there are any script segments
+        hasScript: event.segments && event.segments.length > 0,
+        // Check if any script segments have audio URLs
+        hasAudio:
+          event.segments &&
+          event.segments.some((segment: any) => !!segment.audio_url),
+      }));
+
+      return {
+        success: true,
+        events: formattedEvents,
+        total: formattedEvents.length,
+        filters: {
+          status: params.status || "all",
+          sortBy: params.sortBy || "created",
+          sortOrder: params.sortOrder || "desc",
+        },
+      };
+    } catch (error) {
+      console.error("Error listing events:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to list events",
+      };
+    }
+  },
+});
+
 // Export all event tools
 export const eventTools = {
+  // Create and store
   storeEventDataTool,
+
+  // Read
+  getEventsTool,
+  getEventDetailsTool,
+  getEventLayoutTool,
+  getEventScriptTool,
+  getVoiceSettingsTool,
+  listEventsTool,
+
+  // Update
   generateEventLayoutTool,
-  generateEventLayoutWithLLMTool, // Add new LLM-powered tool
+  generateEventLayoutWithLLMTool,
   updateLayoutSegmentTool,
+  updateVoiceSettingsTool,
+  updateScriptSegmentTool,
+
+  // Finalize
   finalizeEventTool,
+
+  // Legacy tools
   eventLayoutTools,
 };

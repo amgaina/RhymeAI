@@ -908,22 +908,77 @@ export default function EventDetailPage() {
           >
             <RhymeAIChat
               title="Event Assistant"
-              initialMessage={`How can I help with '${event.name}'? Ask me about managing voices, event settings, or generating content.`}
+              initialMessage={`I'm your RhymeAI Event Assistant for '${
+                event.name
+              }'. This ${event.type} event is scheduled for ${new Date(
+                event.date
+              ).toLocaleDateString()}. The event is currently in '${
+                event.status
+              }' status with ${
+                event.scriptSegments.length
+              } script segments (${Math.floor(
+                totalDuration / 60
+              )} minutes total). How can I help you manage voices, adjust settings, or enhance content?`}
               placeholder="Ask about this event..."
               className="border-0 shadow-none"
               eventId={parseInt(eventId as string)}
               eventContext={{
-                purpose: "event-assistance",
+                contextType: "event-assistance",
+                purpose: "event-management",
                 requiredFields: [],
-                contextType: "general-assistant",
                 additionalInfo: {
+                  eventId: parseInt(eventId as string),
                   eventName: event.name,
                   eventType: event.type,
                   eventDate: event.date,
                   eventStatus: event.status,
+                  eventDescription: event.description || "",
+                  location: event.location || "Not specified",
+                  expectedAttendees: "Not specified",
+                  segmentCount: event.scriptSegments?.length || 0,
+                  hasScript: event.scriptSegments?.length > 0,
+                  hasAudio:
+                    event.scriptSegments?.some(
+                      (segment) => segment.audio_url
+                    ) || false,
+                  hasLayout: eventLayout?.segments
+                    ? eventLayout.segments.length > 0
+                    : false,
+                  totalDuration: totalDuration, // in seconds
+                  layoutSegments:
+                    eventLayout?.segments?.map((segment) => ({
+                      id: segment.id,
+                      title: segment.name,
+                      description: segment.description,
+                      duration: segment.duration,
+                      type: segment.type,
+                    })) || [],
+                  scriptSegments:
+                    event.scriptSegments?.map((segment) => ({
+                      id: segment.id,
+                      type: segment.type,
+                      content: segment.content?.substring(0, 100) + "...", // Truncated for context
+                      hasAudio: !!segment.audio_url,
+                      timing: segment.timing,
+                    })) || [],
                 },
               }}
               preserveChat={true}
+              chatSessionId={`event-assistant-${eventId}`}
+              onScriptGenerated={(scriptData) => {
+                // Handle script generation
+                toast({
+                  title: "Script update suggested",
+                  description: "The AI has suggested changes to your script",
+                });
+              }}
+              onVoiceSelected={(voiceData) => {
+                // Handle voice selection
+                toast({
+                  title: "Voice settings updated",
+                  description: "Voice settings have been updated",
+                });
+              }}
             />
           </Card>
         </div>
