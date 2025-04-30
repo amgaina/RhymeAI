@@ -69,12 +69,16 @@ export interface ToolCall {
 // Message interface
 export interface Message {
   id: string;
-  role: "assistant" | "user" | "system" | "data";
+  role: "assistant" | "user" | "system";
   content: string;
-  createdAt?: Date;
-  parts?: MessagePart[];
-  toolCalls?: ToolCall[];
-  toolInvocations?: ToolCall[];
+  createdAt?: string;
+  collectedFields?: Record<string, any>;
+  parts?: Array<{
+    type: string;
+    text: string;
+  }>;
+  toolCalls?: Array<any>;
+  toolInvocations?: Array<any>;
   toolResponse?: string;
 }
 
@@ -103,13 +107,7 @@ export interface EventData {
 // Script data type
 export interface ScriptData {
   title?: string;
-  segments?: Array<{
-    id: string;
-    type: string;
-    content: string;
-    duration?: string;
-    notes?: string;
-  }>;
+  segments?: Array<any>;
   totalDuration?: string;
   [key: string]: any;
 }
@@ -142,7 +140,7 @@ export interface UseRhymeChatProps {
   eventId?: string | number;
   chatSessionId?: string;
   initialMessage?: string;
-  eventContext?: EventContext;
+  eventContext: any;
   preserveChat?: boolean;
 }
 
@@ -162,9 +160,9 @@ export interface UseRhymeChatReturn {
   handleSubmit: (e: FormEvent<HTMLFormElement>) => void;
   isLoading: boolean;
   error: string | null;
-  setError: (error: string | null) => void;
+  setError: React.Dispatch<React.SetStateAction<string | null>>;
   showPreviousConversations: boolean;
-  setShowPreviousConversations: (show: boolean) => void;
+  setShowPreviousConversations: React.Dispatch<React.SetStateAction<boolean>>;
   handleSelectPreviousMessage: (message: string) => void;
   handleFormSubmit: (e: FormEvent<HTMLFormElement>) => Promise<void>;
   scriptData: ScriptData | null;
@@ -177,6 +175,8 @@ export interface UseRhymeChatReturn {
   loadMoreMessages: () => void;
   hasMoreMessages: boolean;
   isLoadingHistory: boolean;
+  toolCalls: any[];
+  handleToolResponse: (toolCallId: string, response: any) => Promise<void>;
 }
 
 export interface UseEventDataReturn {
@@ -189,17 +189,21 @@ export interface UseEventDataReturn {
 // Component prop types
 export interface RhymeAIChatProps {
   title?: string;
-  description?: ReactNode;
+  description?: string;
   initialMessage?: string;
   placeholder?: string;
   className?: string;
   eventId?: string | number;
   chatSessionId?: string;
   preserveChat?: boolean;
-  eventContext?: EventContext;
-  onEventDataCollected?: (data: EventData) => void;
-  onScriptGenerated?: (data: ScriptData) => void;
-  onVoiceSelected?: (data: VoiceData) => void;
+  eventContext?: {
+    contextType: string;
+    requiredFields: string[];
+    additionalInfo?: Record<string, any>;
+  };
+  onEventDataCollected?: (data: any) => void;
+  onScriptGenerated?: (data: any) => void;
+  onVoiceSelected?: (settings: any) => void;
   onContinue?: () => void;
 }
 

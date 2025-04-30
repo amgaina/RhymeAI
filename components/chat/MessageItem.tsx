@@ -15,8 +15,16 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
-import { MessageItemProps, SourcePart } from "@/types/chat";
+import {
+  MessageItemProps as BaseMessageItemProps,
+  SourcePart,
+} from "@/types/chat";
 import { formatDistanceToNow } from "date-fns";
+
+// Create an extended interface that includes eventId
+interface MessageItemProps extends BaseMessageItemProps {
+  eventId?: string | number;
+}
 
 // Extract the tool processing logic into a separate function
 const processToolData = (tools: any[]) => {
@@ -111,7 +119,8 @@ const ToolResult = ({ tool }: { tool: any }) => {
   );
 };
 
-export function MessageItem({ message }: MessageItemProps) {
+// Update the component to accept the eventId parameter
+export function MessageItem({ message, eventId }: MessageItemProps) {
   const isAssistant = message.role === "assistant";
 
   // Process tool data once
@@ -185,7 +194,7 @@ export function MessageItem({ message }: MessageItemProps) {
                 <span>Actions performed:</span>
               </div>
 
-              <MessageToolsContainer tools={toolsData} />
+              <MessageToolsContainer tools={toolsData} eventId={eventId} />
             </div>
           )}
         </div>

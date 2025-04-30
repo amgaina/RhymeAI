@@ -3,6 +3,20 @@ import { MessageItem } from "./MessageItem";
 import { ChatMessagesProps } from "@/types/chat";
 import { Button } from "@/components/ui/button";
 
+interface ChatMessagesProps {
+  messages: any[];
+  isLoading: boolean;
+  error: string | null;
+  messagesEndRef: React.RefObject<HTMLDivElement>;
+  chatContainerRef: React.RefObject<HTMLDivElement>;
+  initialMessage: string;
+  handleScroll: (e: React.UIEvent<HTMLDivElement>) => void; // Fixed type here
+  loadMoreMessages: () => void;
+  hasMoreMessages: boolean;
+  isLoadingHistory: boolean;
+  eventId?: string | number;
+}
+
 export function ChatMessages({
   messages,
   isLoading,
@@ -14,11 +28,12 @@ export function ChatMessages({
   loadMoreMessages,
   hasMoreMessages,
   isLoadingHistory,
+  eventId,
 }: ChatMessagesProps) {
   return (
     <div
       className="flex-1 space-y-4 p-4 min-h-[400px] max-h-[600px] overflow-y-auto"
-      onScroll={handleScroll}
+      onScroll={handleScroll} // This now expects a function that takes an event parameter
       ref={chatContainerRef}
     >
       {/* Load More Messages Button */}
@@ -50,7 +65,7 @@ export function ChatMessages({
         </div>
       ) : (
         messages.map((message) => (
-          <MessageItem key={message.id} message={message} />
+          <MessageItem key={message.id} message={message} eventId={eventId} />
         ))
       )}
 

@@ -108,6 +108,32 @@ export async function POST(req: Request) {
     return result.toDataStreamResponse();
   } catch (error) {
     console.error("Error processing POST request:", error);
-    return new Response("Internal Server Error", { status: 500 });
+
+    // Create a more detailed error response
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    const errorStack =
+      error instanceof Error ? error.stack : "No stack trace available";
+
+    console.error("Error details:", {
+      message: errorMessage,
+      stack: errorStack,
+      type: error instanceof Error ? error.constructor.name : "Unknown",
+    });
+
+    // Return a more helpful error response
+    return new Response(
+      JSON.stringify({
+        error: errorMessage,
+        errorType: error instanceof Error ? error.constructor.name : "Unknown",
+        timestamp: new Date().toISOString(),
+      }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
   }
 }

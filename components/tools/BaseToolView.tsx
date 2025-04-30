@@ -1,7 +1,13 @@
 import { ToolCall as AIToolCall } from "ai";
 
-// Re-export the ToolCall type from ai
-export type ToolCall = AIToolCall<string, any>;
+// Define our custom ToolCall interface that includes all the properties we need
+export interface ToolCall {
+  toolCallId: string;
+  toolName: string;
+  args?: Record<string, any>;
+  result?: any;
+  isError?: boolean;
+}
 
 interface BaseToolViewProps {
   tool: ToolCall;
