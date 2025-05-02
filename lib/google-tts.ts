@@ -2,7 +2,7 @@
  * Google Text-to-Speech utilities for RhymeAI
  * Handles TTS generation using Google Cloud TTS API
  */
-import { TextToSpeechClient } from "@google-cloud/text-to-speech";
+import { TextToSpeechClient, protos } from "@google-cloud/text-to-speech";
 import { uploadToS3, generateAudioKey } from "./s3-utils";
 import { db } from "./db";
 
@@ -44,52 +44,37 @@ export interface VoiceConfig {
 
 /**
  * Default voice configurations
- *
- * Valid ranges for parameters:
- * - speakingRate: 0.25 to 2.0 (Google TTS API limit)
- * - pitch: -20.0 to 20.0
- * - volumeGainDb: -96.0 to 16.0
  */
 export const DEFAULT_VOICES: Record<string, VoiceConfig> = {
   professional: {
     languageCode: "en-US",
-    name: "en-US-Neural2-F",
-    ssmlGender: "FEMALE",
-    speakingRate: 0.95, // Within valid range
-    pitch: 0, // Within valid range
-    volumeGainDb: 0, // Within valid range
+    name: "en-US-Chirp3-HD-Achernar",
+    ssmlGender: "MALE",
+    // No custom parameters to avoid API errors
   },
   casual: {
     languageCode: "en-US",
-    name: "en-US-Neural2-D",
+    name: "en-US-Chirp3-HD-Achernar",
     ssmlGender: "MALE",
-    speakingRate: 1.0, // Within valid range
-    pitch: 0, // Neutral pitch to avoid distortion
-    volumeGainDb: 0, // Within valid range
+    // No custom parameters to avoid API errors
   },
   energetic: {
     languageCode: "en-US",
-    name: "en-US-Neural2-H",
-    ssmlGender: "FEMALE",
-    speakingRate: 1.05, // Within valid range
-    pitch: 1.0, // Within valid range
-    volumeGainDb: 2.0, // Within valid range
+    name: "en-US-Chirp3-HD-Achernar",
+    ssmlGender: "MALE",
+    // No custom parameters to avoid API errors
   },
   formal: {
     languageCode: "en-US",
-    name: "en-US-Neural2-J",
+    name: "en-US-Chirp3-HD-Achernar",
     ssmlGender: "MALE",
-    speakingRate: 0.9, // Within valid range
-    pitch: -1.0, // Within valid range
-    volumeGainDb: 0, // Within valid range
+    // No custom parameters to avoid API errors
   },
   mc: {
     languageCode: "en-US",
-    name: "en-US-Neural2-D", // Male voice with good projection
+    name: "en-US-Chirp3-HD-Achernar",
     ssmlGender: "MALE",
-    speakingRate: 1.15, // Slightly faster, but not rushed (good for MC)
-    pitch: 1.5, // Slightly higher for enthusiasm
-    volumeGainDb: 4.0, // More projection and presence
+    // No custom parameters to avoid API errors
   },
 };
 
@@ -97,7 +82,7 @@ export const DEFAULT_VOICES: Record<string, VoiceConfig> = {
  * Parse SSML markers from text
  * Converts custom markers like [PAUSE=300] to proper SSML
  */
-function parseSSMLMarkers(text: string): string {
+export function parseSSMLMarkers(text: string): string {
   // Replace custom markers with SSML tags
   let ssml = text
     // Replace [PAUSE=X] with <break time="Xms"/>
@@ -128,96 +113,138 @@ function parseSSMLMarkers(text: string): string {
 /**
  * Generate TTS audio using Google Cloud TTS
  * @param text The text to convert to speech
- * @param voiceConfig Voice configuration
+ * @param voiceSettings Voice settings
  * @returns Buffer containing the audio data
  */
 export async function generateTTS(
   text: string,
-  voiceConfig: VoiceConfig
+  voiceSettings: any = {}
 ): Promise<Buffer> {
-  if (!ttsClient) {
-    throw new Error("Google TTS client not initialized");
-  }
-
   try {
-    // Parse SSML markers
-    const ssml = parseSSMLMarkers(text);
-
-    // Validate all parameters to ensure they're within valid ranges
-
-    // 1. Speaking rate: valid range is 0.25 to 2.0 (Google TTS API limit)
-    const speakingRate = voiceConfig.speakingRate || 1.0;
-    const validSpeakingRate = Math.max(0.25, Math.min(2.0, speakingRate));
-    if (speakingRate !== validSpeakingRate) {
-      console.warn(
-        `Speaking rate adjusted from ${speakingRate} to ${validSpeakingRate} to be within valid range (0.25 to 2.0)`
-      );
+    const client = ttsClient;
+    if (!client) {
+      throw new Error("Google TTS client not initialized");
     }
 
-    // 2. Pitch: valid range is -20.0 to 20.0
-    const pitch = voiceConfig.pitch || 0;
-    const validPitch = Math.max(-20.0, Math.min(20.0, pitch));
-    if (pitch !== validPitch) {
-      console.warn(
-        `Pitch adjusted from ${pitch} to ${validPitch} to be within valid range (-20.0 to 20.0)`
-      );
+    // Check if we're using Chirp voice
+    const isChirpVoice = voiceSettings.name?.includes("Chirp");
+
+    let inputText;
+    let request;
+
+    if (isChirpVoice) {
+      // For Chirp voices: Use plain text input, not SSML
+      // Strip any SSML tags and convert pause markers to periods or spaces
+      inputText = text
+        .replace(/\[PAUSE=\d+\]/g, ". ") // Replace pause markers with period + space
+        .replace(/\[BREATHE\]/g, ". ") // Replace breathe with period + space
+        .replace(/\[EMPHASIS\](.*?)\[\/EMPHASIS\]/g, "$1") // Remove emphasis tags
+        .replace(/\[EMPHASIS\]/g, "")
+        .replace(/\[\/EMPHASIS\]/g, "")
+        .replace(/\[SLOW\](.*?)\[\/SLOW\]/g, "$1")
+        .replace(/\[FAST\](.*?)\[\/FAST\]/g, "$1")
+        .replace(/\[SOFT\](.*?)\[\/SOFT\]/g, "$1")
+        .replace(/\[LOUD\](.*?)\[\/LOUD\]/g, "$1")
+        .replace(/<[^>]*>?/gm, ""); // Remove any remaining HTML-like tags
+
+      request = {
+        input: { text: inputText.trim() }, // Use plain text for Chirp
+        voice: {
+          languageCode: "en-US",
+          name: "en-US-Chirp3-HD-Achernar",
+        },
+        audioConfig: {
+          audioEncoding: protos.google.cloud.texttospeech.v1.AudioEncoding.MP3,
+          sampleRateHertz: 24000,
+          effectsProfileId: [
+            "large-home-entertainment-class-device",
+            "headphone-class-device",
+          ],
+        },
+      };
+
+      console.log("Google TTS request (Chirp voice with plain text):", {
+        voice: request.voice,
+        textLength: inputText.length,
+      });
+    } else {
+      // For other voices: Use SSML
+      inputText = parseSSMLMarkers(text.trim());
+
+      request = {
+        input: { ssml: inputText }, // Use SSML for non-Chirp voices
+        voice: {
+          languageCode: voiceSettings.languageCode || "en-US",
+          name: voiceSettings.name || "en-US-Studio-O",
+        },
+        audioConfig: {
+          audioEncoding: protos.google.cloud.texttospeech.v1.AudioEncoding.MP3,
+          sampleRateHertz: 24000,
+          effectsProfileId: [
+            "large-home-entertainment-class-device",
+            "headphone-class-device",
+          ],
+        },
+      };
+
+      console.log("Google TTS request (non-Chirp voice with SSML):", {
+        voice: request.voice,
+        textLength: inputText.length,
+      });
     }
 
-    // 3. Volume gain: valid range is -96.0 to 16.0
-    const volumeGainDb = voiceConfig.volumeGainDb || 0;
-    const validVolumeGainDb = Math.max(-96.0, Math.min(16.0, volumeGainDb));
-    if (volumeGainDb !== validVolumeGainDb) {
-      console.warn(
-        `Volume gain adjusted from ${volumeGainDb} to ${validVolumeGainDb} to be within valid range (-96.0 to 16.0)`
-      );
+    // Generate speech
+    try {
+      const [response] = await client.synthesizeSpeech(request);
+
+      if (!response.audioContent) {
+        throw new Error("No audio content generated");
+      }
+
+      return Buffer.from(response.audioContent as string, "base64");
+    } catch (error) {
+      // If first attempt failed, try fallback to Studio voice
+      if (isChirpVoice) {
+        console.error(
+          "Error with Chirp voice, trying Studio voice as fallback:",
+          error
+        );
+
+        const fallbackRequest = {
+          input: { text: inputText }, // Keep using plain text
+          voice: {
+            languageCode: "en-US",
+            name: "en-US-Studio-O",
+          },
+          audioConfig: {
+            audioEncoding:
+              protos.google.cloud.texttospeech.v1.AudioEncoding.MP3,
+            sampleRateHertz: 24000,
+            effectsProfileId: [
+              "large-home-entertainment-class-device",
+              "headphone-class-device",
+            ],
+          },
+        };
+
+        console.log("Fallback TTS request:", {
+          voice: fallbackRequest.voice,
+          textLength: inputText.length,
+        });
+
+        const [fallbackResponse] = await client.synthesizeSpeech(
+          fallbackRequest
+        );
+
+        if (!fallbackResponse.audioContent) {
+          throw new Error("No audio content generated from fallback voice");
+        }
+
+        return Buffer.from(fallbackResponse.audioContent as string, "base64");
+      } else {
+        throw error; // Re-throw if not using Chirp voice
+      }
     }
-
-    // Configure the request with validated parameters
-    const request = {
-      input: { ssml },
-      voice: {
-        languageCode: voiceConfig.languageCode,
-        name: voiceConfig.name,
-        ssmlGender: voiceConfig.ssmlGender,
-      },
-      audioConfig: {
-        audioEncoding: "MP3" as const,
-        speakingRate: validSpeakingRate,
-        pitch: validPitch,
-        volumeGainDb: validVolumeGainDb,
-        // Higher quality audio settings for MC-style voice
-        sampleRateHertz: 24000, // Increased from default for better clarity
-        // Use effects profiles suited for presentation and announcement scenarios
-        effectsProfileId: [
-          "large-home-entertainment-class-device", // For better projection
-          "headphone-class-device", // For clarity and detail
-        ],
-      },
-    };
-
-    // Log the request for debugging
-    console.log("Google TTS request:", {
-      languageCode: request.voice.languageCode,
-      name: request.voice.name,
-      ssmlGender: request.voice.ssmlGender,
-      speakingRate: request.audioConfig.speakingRate,
-      pitch: request.audioConfig.pitch,
-      volumeGainDb: request.audioConfig.volumeGainDb,
-      sampleRateHertz: request.audioConfig.sampleRateHertz,
-      effectsProfileId: request.audioConfig.effectsProfileId,
-      textLength: ssml.length,
-    });
-
-    // Generate the audio
-    const [response] = await ttsClient.synthesizeSpeech(request);
-
-    if (!response.audioContent) {
-      throw new Error("No audio content returned from Google TTS");
-    }
-
-    const audioBuffer = Buffer.from(response.audioContent as Uint8Array);
-    console.log(`Generated audio buffer size: ${audioBuffer.length} bytes`);
-    return audioBuffer;
   } catch (error) {
     console.error("Error generating TTS:", error);
     throw new Error(
@@ -234,101 +261,12 @@ export async function generateTTS(
  * @returns Voice configuration
  */
 export function getVoiceConfigFromSettings(voiceSettings: any): VoiceConfig {
-  // Default to professional voice if no settings provided
-  if (!voiceSettings) {
-    return DEFAULT_VOICES.professional;
-  }
-
-  // If voiceSettings is a string, try to parse it
-  let settings;
-  if (typeof voiceSettings === "string") {
-    try {
-      settings = JSON.parse(voiceSettings);
-    } catch (error) {
-      console.error("Error parsing voice settings JSON:", error);
-      console.warn("Using default voice settings due to parsing error");
-      return DEFAULT_VOICES.professional;
-    }
-  } else {
-    settings = voiceSettings;
-  }
-
-  // Get the voice type or default to professional
-  const voiceType = settings.type?.toLowerCase() || "professional";
-
-  // Get the base voice configuration
-  const baseConfig = DEFAULT_VOICES[voiceType] || DEFAULT_VOICES.professional;
-
-  // Validate all parameters to ensure they're within valid ranges
-
-  // 1. Speaking rate: valid range is 0.25 to 2.0 (Google TTS API limit)
-  // Convert from percentage (0-100) to actual rate (0.25-2.0) if needed
-  let speakingRate;
-  if (settings.speakingRate !== undefined) {
-    // If it's a percentage (0-100), convert to actual rate
-    if (settings.speakingRate >= 0 && settings.speakingRate <= 100) {
-      // Map 0-100 to 0.25-2.0
-      speakingRate = 0.25 + (settings.speakingRate / 100) * (2.0 - 0.25);
-    } else {
-      // Assume it's already in the correct range
-      speakingRate = settings.speakingRate;
-    }
-  } else {
-    speakingRate = baseConfig.speakingRate || 1.0;
-  }
-  // Ensure it's within valid range
-  speakingRate = Math.max(0.25, Math.min(2.0, speakingRate));
-
-  // 2. Pitch: valid range is -20.0 to 20.0
-  // Convert from percentage (-100 to 100) to actual pitch (-20 to 20) if needed
-  let pitch;
-  if (settings.pitch !== undefined) {
-    // If it's a percentage (-100 to 100), convert to actual pitch
-    if (settings.pitch >= -100 && settings.pitch <= 100) {
-      // Map -100-100 to -20-20
-      pitch = (settings.pitch / 100) * 20;
-    } else {
-      // Assume it's already in the correct range
-      pitch = settings.pitch;
-    }
-  } else {
-    pitch = baseConfig.pitch || 0;
-  }
-  // Ensure it's within valid range
-  pitch = Math.max(-20.0, Math.min(20.0, pitch));
-
-  // 3. Volume gain: valid range is -96.0 to 16.0
-  // For volume, we'll keep it at 0 (neutral) to avoid distortion
-  let volumeGainDb = settings.volumeGainDb || baseConfig.volumeGainDb || 0;
-  volumeGainDb = Math.max(-6.0, Math.min(6.0, volumeGainDb)); // More conservative range
-
-  // If MC type is specified, apply special handling
-  if (voiceType === "mc") {
-    // For MC type, we want to ensure energetic, clear delivery
-    speakingRate = settings.speakingRate ?? 1.15;
-    pitch = settings.pitch ?? 1.5;
-    volumeGainDb = settings.volumeGainDb ?? 4.0;
-
-    // Ensure parameters are within valid ranges but favor MC characteristics
-    speakingRate = Math.max(0.9, Math.min(1.35, speakingRate)); // Narrower range for clarity
-    pitch = Math.max(0, Math.min(3.0, pitch)); // Keep positive for energy
-    volumeGainDb = Math.max(2.0, Math.min(6.0, volumeGainDb)); // Ensure good projection
-
-    // Override voice if not specifically requested
-    if (!settings.name) {
-      baseConfig.name = "en-US-Neural2-D"; // Default to a good MC voice
-      baseConfig.ssmlGender = "MALE";
-    }
-  }
-
-  // Override with custom settings if provided, using validated values
+  // Always return the Chirp voice configuration regardless of settings
   return {
-    ...baseConfig,
-    languageCode:
-      settings.languageCode || settings.language || baseConfig.languageCode,
-    speakingRate: speakingRate,
-    pitch: pitch,
-    volumeGainDb: volumeGainDb,
+    languageCode: "en-US",
+    name: "en-US-Chirp3-HD-Achernar",
+    ssmlGender: "MALE",
+    // No additional parameters to avoid errors
   };
 }
 
@@ -481,19 +419,23 @@ export function estimateTTSDuration(
   text: string,
   speakingRate: number = 1.0
 ): number {
-  // Ensure speaking rate is within valid range (0.25 to 2.0)
-  const validSpeakingRate = Math.max(0.25, Math.min(2.0, speakingRate));
+  // Remove HTML/XML tags if any
+  const cleanText = text.replace(/<[^>]*>?/gm, "");
 
-  // Remove SSML tags for calculation
-  const cleanText = text.replace(/<[^>]+>/g, "");
+  // Calculate word count (splitting by spaces)
+  const wordCount = cleanText
+    .split(/\s+/)
+    .filter((word) => word.length > 0).length;
 
-  // Count words (approximately 150 words per minute at normal speed)
-  const wordCount = cleanText.split(/\s+/).length;
+  // Average English word takes about 0.3-0.4 seconds to speak
+  // Adjust based on speaking rate (if provided)
+  const averageWordDuration = 0.35 / speakingRate;
 
-  // Calculate duration based on word count and speaking rate
-  // Adjust the 150 WPM baseline based on speaking rate
-  const durationInMinutes = wordCount / (150 * validSpeakingRate);
+  // Calculate duration in seconds
+  let duration = wordCount * averageWordDuration;
 
-  // Convert to seconds and add a small buffer
-  return Math.ceil(durationInMinutes * 60) + 2;
+  // Add a small buffer (for pauses, etc.)
+  duration += 1.0;
+
+  return Math.round(duration);
 }

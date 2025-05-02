@@ -7,11 +7,11 @@ import { getPresignedUrl } from "@/lib/s3-utils";
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { key: string } }
+  { params }: { params: Promise<{ key: string }> }
 ) {
   try {
     // Get the S3 key from the URL (it's URL encoded)
-    const s3key = decodeURIComponent(params.key);
+    const s3key = decodeURIComponent((await params).key);
 
     if (!s3key) {
       return NextResponse.json(

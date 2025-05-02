@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   UseEventDataProps,
   UseEventDataReturn,
@@ -21,39 +21,66 @@ export function useEventData({
   >({});
   const [isDataComplete, setIsDataComplete] = useState<boolean>(false);
 
-  // Track collected information
-  useEffect(() => {
-    const allRequiredFields = eventContext?.requiredFields || [];
-    const requiredFieldsCollected = allRequiredFields.every(
-      (field) => collectedFields[field]
-    );
-    setIsDataComplete(requiredFieldsCollected && allRequiredFields.length > 0);
-  }, [collectedFields, eventContext?.requiredFields]);
+  // Use ref to track previous message count to prevent unnecessary processing
+  const prevMessagesCountRef = useRef<number>(0);
+  const prevFieldsCountRef = useRef<number>(0);
 
-  // Extract field information from messages
+  // Combined effect to handle both field collection and completion tracking
   useEffect(() => {
-    const newCollectedFields = { ...collectedFields };
-    const fieldPatterns =
-      eventContext?.requiredFields?.map((field) => ({
-        field,
-        regex: new RegExp(`${field}[:\\s]+(.*?)(?=\\n|$)`, "i"),
-      })) || [];
+    // Skip processing if messages haven't changed in length
+    if (
+      prevMessagesCountRef.current === messages.length &&
+      prevFieldsCountRef.current === eventContext?.requiredFields?.length
+    ) {
+      return;
+    }
+
+    // Update ref values
+    prevMessagesCountRef.current = messages.length;
+    prevFieldsCountRef.current = eventContext?.requiredFields?.length || 0;
+
+    // Skip if no messages or no required fields
+    if (!messages.length || !eventContext?.requiredFields?.length) {
+      return;
+    }
+
+    // Process messages to extract fields
+    const updatedFields = { ...collectedFields };
+    let hasChanges = false;
 
     // Check each message for fields
     messages.forEach((message) => {
       if (!message.content) return;
 
-      fieldPatterns.forEach(({ field, regex }) => {
-        if (message.content.toLowerCase().includes(field.toLowerCase())) {
-          newCollectedFields[field] = true;
+      eventContext.requiredFields.forEach((field) => {
+        // Only process fields that aren't already collected
+        if (
+          !updatedFields[field] &&
+          message.content.toLowerCase().includes(field.toLowerCase())
+        ) {
+          updatedFields[field] = true;
+          hasChanges = true;
         }
       });
     });
 
-    setCollectedFields(newCollectedFields);
-  }, [messages, eventContext?.requiredFields]);
+    // Only update state if there were changes
+    if (hasChanges) {
+      setCollectedFields(updatedFields);
 
-  // Calculate progress percentage
+      // Check if all fields are complete
+      const allRequiredFields = eventContext.requiredFields || [];
+      const requiredFieldsCollected = allRequiredFields.every(
+        (field) => updatedFields[field]
+      );
+
+      setIsDataComplete(
+        requiredFieldsCollected && allRequiredFields.length > 0
+      );
+    }
+  }, [messages, eventContext?.requiredFields, collectedFields]);
+
+  // Calculate progress percentage outside of effects
   const progressPercentage = eventContext?.requiredFields?.length
     ? Math.round(
         (Object.values(collectedFields).filter(Boolean).length /
@@ -68,16 +95,19 @@ export function useEventData({
       // Extract event data from conversation
       const eventData: EventData = {};
       eventContext?.requiredFields?.forEach((field) => {
-        messages.forEach((msg) => {
-          if (msg.content?.toLowerCase().includes(field.toLowerCase())) {
-            const match = msg.content.match(
-              new RegExp(`${field}[:\\s]+(.*?)(?=\\n|$)`, "i")
-            );
-            if (match?.[1]) {
-              eventData[field] = match[1].trim();
-            }
+        // Find the first message that contains this field
+        const messageWithField = messages.find((msg) =>
+          msg.content?.toLowerCase().includes(field.toLowerCase())
+        );
+
+        if (messageWithField?.content) {
+          const match = messageWithField.content.match(
+            new RegExp(`${field}[:\\s]+(.*?)(?=\\n|$)`, "i")
+          );
+          if (match?.[1]) {
+            eventData[field] = match[1].trim();
           }
-        });
+        }
       });
 
       if (Object.keys(eventData).length > 0) {

@@ -1230,6 +1230,12 @@ export async function getEventById(eventId: string): Promise<{
         },
       },
     });
+    const chatMessages = await db.chat_messages.findMany({
+      where: {
+        event_id: eventIdNum,
+        user_id: session.userId, // Ensure the user can only access their own events
+      },
+    });
 
     if (!event) {
       return { success: false, error: "Event not found" };
@@ -1303,6 +1309,7 @@ export async function getEventById(eventId: string): Promise<{
       status: event.status,
       hasPresentation: !!event.has_presentation,
       playCount: event.play_count || 0,
+      chatMessages: chatMessages,
     };
 
     return {

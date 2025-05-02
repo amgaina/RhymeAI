@@ -76,6 +76,7 @@ export default function EventDetailPage() {
 
         // Use the new getEventById function to fetch only the specific event
         const result = await getEventById(eventId as string);
+        console.log("Event data loaded:", result);
 
         if (result.success && result.event) {
           console.log("Event loaded successfully:", result.event);
