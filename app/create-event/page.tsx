@@ -1,4 +1,6 @@
 "use client";
+import EventCreationForm from "@/components/event-creation/EventCreationForm";
+import useEventCreation from "@/hooks/useEventCreation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,7 +12,24 @@ import {
 import { ArrowLeft, Mic2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import EventCreationForm from "@/components/EventCreationForm";
+
+// Wrapper component to provide the required props to EventCreationForm
+function EventCreationFormWrapper() {
+  const { formData, handleFormChange, submitFinalEvent } = useEventCreation();
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitFinalEvent();
+  };
+
+  return (
+    <EventCreationForm
+      formData={formData}
+      onChange={handleFormChange}
+      onSubmit={handleSubmit}
+    />
+  );
+}
 
 export default function CreateEvent() {
   const router = useRouter();
@@ -56,7 +75,7 @@ export default function CreateEvent() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <EventCreationForm />
+                <EventCreationFormWrapper />
               </CardContent>
             </Card>
 

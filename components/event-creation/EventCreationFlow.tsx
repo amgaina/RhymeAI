@@ -20,6 +20,7 @@ import {
   updateToolProcessingToast,
 } from "@/lib/toast-utils";
 import { EventDetailsStep } from "./steps/EventDetailsStep";
+import { EventCreationForm } from "@/components/EventCreationForm";
 import { EventLayoutStep } from "./steps/EventLayoutStep";
 import { ScriptGenerationStep } from "./steps/ScriptGenerationStep";
 import { FinalizeEventStep } from "./steps/FinalizeEventStep";
@@ -813,17 +814,25 @@ export default function EventCreationFlow() {
     switch (currentStep) {
       case "event_details":
         return (
-          <EventDetailsStep
-            eventId={eventId}
-            eventData={eventData}
-            isLoading={isLoading}
-            onEventDataCollected={handleEventDataCollected}
-            onContinue={() => {
-              handleCreateOrUpdateEvent();
-              navigateToStep("event_layout");
-            }}
-            isEditMode={!!eventId} // Set edit mode if we have an eventId (coming back from layout)
-          />
+          <>
+            {/* Original EventDetailsStep */}
+            {false && (
+              <EventDetailsStep
+                eventId={eventId}
+                eventData={eventData}
+                isLoading={isLoading}
+                onEventDataCollected={handleEventDataCollected}
+                onContinue={() => {
+                  handleCreateOrUpdateEvent();
+                  navigateToStep("event_layout");
+                }}
+                isEditMode={!!eventId} // Set edit mode if we have an eventId (coming back from layout)
+              />
+            )}
+
+            {/* New EventCreationForm */}
+            <EventCreationForm />
+          </>
         );
 
       case "event_layout":

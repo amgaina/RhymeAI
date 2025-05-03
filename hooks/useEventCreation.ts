@@ -1,11 +1,7 @@
 import { useState } from "react";
-import {
-  createEvent,
-  createScriptSegment,
-  generateScript,
-  updateVoiceSettings,
-  finalizeEvent,
-} from "@/app/actions/event";
+import { createEvent, finalizeEvent } from "@/app/actions/event";
+import { updateVoiceSettings } from "@/app/actions/event/update";
+import { generateScript } from "@/app/actions/event/script";
 import { useToast } from "@/components/ui/use-toast";
 import { useRouter } from "next/navigation";
 import {
@@ -277,30 +273,8 @@ export default function useEventCreation() {
 
           await updateVoiceSettings(eventIdNum, voiceSettings);
 
-          // Either generate script or save existing segments
-          if (collectedEventData) {
-            await generateScript(eventIdStr);
-          } else {
-            // Save existing script segments
-            for (const segment of scriptSegments) {
-              // Ensure status is a valid ScriptSegmentStatus before passing to API
-              const segmentStatus: ScriptSegmentStatus =
-                segment.status === "generated" ||
-                segment.status === "generating" ||
-                segment.status === "editing" ||
-                segment.status === "draft"
-                  ? segment.status
-                  : "draft";
-
-              await createScriptSegment(eventIdStr, {
-                type: segment.type,
-                content: segment.content,
-                status: segmentStatus,
-                timing: 30, // This is now properly typed as a number
-                order: segment.order,
-              });
-            }
-          }
+          // Generate script for the event
+          await generateScript(eventIdStr);
 
           // Mark event as finalized
           await finalizeEvent(eventIdStr);
