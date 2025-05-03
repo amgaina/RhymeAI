@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -21,9 +21,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getPresignedAudioUrl } from "@/app/actions/event/get-presigned-url";
 import { useToast } from "@/components/ui/use-toast";
-import useTextToSpeech from "@/hooks/useTextToSpeech";
+import useAudioPlayer from "@/hooks/useAudioPlayer"; // Import the hook
 
 interface ImprovedAudioPlayerProps {
   audioUrl?: string | null;
@@ -46,433 +45,50 @@ export default function ImprovedAudioPlayer({
   onNextSegment,
   onPrevSegment,
 }: ImprovedAudioPlayerProps) {
-  // State for audio playback
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [volume, setVolume] = useState(80);
-  const [playbackRate, setPlaybackRate] = useState(1.0);
-
-  // State for presigned URL
-  const [presignedUrl, setPresignedUrl] = useState<string | null>(null);
-  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
-  const [urlError, setUrlError] = useState<string | null>(null);
-
-  // Audio element reference
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Toast notifications
   const { toast } = useToast();
 
-  // Browser TTS fallback
+  // Use the useAudioPlayer hook, passing the audioUrl as initialUrl
   const {
-    speakText,
-    stopSpeaking,
-    isPlaying: isBrowserTtsPlaying,
-  } = useTextToSpeech();
+    isPlaying,
+    duration,
+    currentTime,
+    volume,
+    playbackRate,
+    isLoadingUrl,
+    urlError,
+    audioRef,
+    togglePlay,
+    handleSeek,
+    skipForward,
+    skipBackward,
+    handleVolumeChange,
+    changePlaybackRate,
+    refreshPresignedUrl,
+    formatTime,
+    audioInitialized,
+  } = useAudioPlayer({
+    initialUrl: audioUrl,
+    audioS3key: segmentId ? `segment-${segmentId}` : null,
+    scriptText,
+    onNextSegment,
+    segmentIndex,
+    totalSegments,
+  });
 
-  // Fetch presigned URL when segmentId or audioUrl changes
-  useEffect(() => {
-    // Check if we have a segmentId or audioUrl
-    if (!segmentId && !audioUrl) {
-      console.log("No segmentId or audioUrl provided");
-      return;
-    }
-
-    // Check if the audioUrl is a full URL or just an S3 key
-    const isFullUrl =
-      audioUrl &&
-      (audioUrl.startsWith("http://") || audioUrl.startsWith("https://"));
-    const isS3Key =
-      audioUrl &&
-      !isFullUrl &&
-      (audioUrl.startsWith("audio/") || audioUrl.includes(".mp3"));
-
-    console.log(
-      `Audio URL type: ${
-        isFullUrl ? "full URL" : isS3Key ? "S3 key" : "unknown"
-      }`
-    );
-
-    const fetchPresignedUrl = async () => {
-      try {
-        setIsLoadingUrl(true);
-        setUrlError(null);
-
-        // If we have a segmentId, use that to get a presigned URL
-        if (segmentId) {
-          console.log(`Fetching presigned URL for segment ${segmentId}`);
-          const result = await getPresignedAudioUrl(segmentId);
-
-          if (result.success && result.presignedUrl) {
-            console.log(
-              `Got presigned URL: ${result.presignedUrl.substring(0, 100)}...`
-            );
-            setPresignedUrl(result.presignedUrl);
-
-            // Initialize audio element with the new URL
-            initializeAudio(result.presignedUrl);
-            return;
-          } else {
-            console.error(`Error getting presigned URL: ${result.error}`);
-            setUrlError(result.error || "Failed to get presigned URL");
-
-            // Continue to try other methods
-          }
-        }
-
-        // If we have an S3 key, try to get a presigned URL for it directly
-        if (isS3Key) {
-          try {
-            console.log(`Generating presigned URL for S3 key: ${audioUrl}`);
-            // Import the getPresignedUrl function directly
-            const { getPresignedUrl } = await import("@/lib/s3-utils");
-            const presignedUrl = await getPresignedUrl(audioUrl!, 3600);
-
-            console.log(
-              `Got presigned URL for S3 key: ${presignedUrl.substring(
-                0,
-                100
-              )}...`
-            );
-            setPresignedUrl(presignedUrl);
-
-            // Initialize audio element with the new URL
-            initializeAudio(presignedUrl);
-            return;
-          } catch (error) {
-            console.error(
-              `Error generating presigned URL for S3 key: ${audioUrl}`,
-              error
-            );
-            setUrlError(
-              `Failed to generate presigned URL: ${
-                error instanceof Error ? error.message : String(error)
-              }`
-            );
-
-            // Continue to try other methods
-          }
-        }
-
-        // If we have a full URL, use it directly
-        if (isFullUrl) {
-          console.log(`Using full URL directly: ${audioUrl}`);
-          initializeAudio(audioUrl!);
-          return;
-        }
-
-        // If we get here, we couldn't play the audio
-        console.error("Could not play audio: no valid URL available");
-        setUrlError("Could not play audio: no valid URL available");
-
-        toast({
-          title: "Error",
-          description: "Could not play audio: no valid URL available",
-          variant: "destructive",
-        });
-      } catch (error) {
-        console.error("Error fetching presigned URL:", error);
-        setUrlError(error instanceof Error ? error.message : "Unknown error");
-
-        // Try with the original URL as fallback if it's a full URL
-        if (isFullUrl) {
-          console.log(
-            `Using original URL as fallback after error: ${audioUrl}`
-          );
-          initializeAudio(audioUrl!);
-        }
-      } finally {
-        setIsLoadingUrl(false);
-      }
-    };
-
-    fetchPresignedUrl();
-  }, [segmentId, audioUrl, toast]);
-
-  // Initialize audio element with a URL
-  const initializeAudio = (url: string) => {
-    // Clean up any existing audio element
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current.load();
-    }
-
-    console.log(`Initializing audio with URL: ${url.substring(0, 100)}...`);
-
-    // Create a new audio element
-    const audio = new Audio();
-
-    // Set crossOrigin to anonymous to handle CORS issues
-    audio.crossOrigin = "anonymous";
-
-    // Add error handling for audio loading
-    audio.onerror = (e) => {
-      console.error(`Audio loading error:`, e);
-
-      // Get detailed error information
-      let errorMessage = "Unknown error";
-      let errorCode = "";
-
-      if (audio.error) {
-        errorMessage = audio.error.message || "Unknown error";
-        errorCode = audio.error.code?.toString() || "";
-
-        // Map error codes to more descriptive messages
-        switch (audio.error.code) {
-          case MediaError.MEDIA_ERR_ABORTED:
-            errorMessage = "Playback aborted by the user";
-            break;
-          case MediaError.MEDIA_ERR_NETWORK:
-            errorMessage = "Network error occurred while loading the audio";
-            break;
-          case MediaError.MEDIA_ERR_DECODE:
-            errorMessage = "Audio decoding error";
-            break;
-          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-            errorMessage = "Audio format not supported";
-            break;
-        }
-      }
-
-      console.error(
-        `Audio error details: Code ${errorCode}, Message: ${errorMessage}`
-      );
-      console.error(`Audio URL: ${url}`);
-
-      setUrlError(`Error: ${errorMessage}`);
-
-      // Fall back to browser TTS if available
-      if (scriptText) {
-        toast({
-          title: "Falling back to browser TTS",
-          description: "Using browser's text-to-speech as fallback",
-        });
-        speakText(scriptText, { rate: playbackRate });
-      } else {
-        toast({
-          title: "Audio Error",
-          description: `Error loading audio: ${errorMessage}`,
-          variant: "destructive",
-          action: (
-            <Button variant="outline" size="sm" onClick={refreshPresignedUrl}>
-              Refresh URL
-            </Button>
-          ),
-        });
-      }
-    };
-
-    // Set up event listeners
-    audio.onloadedmetadata = () => {
-      console.log(`Audio metadata loaded, duration: ${audio.duration}s`);
-      setDuration(audio.duration || 60);
-    };
-
-    audio.ontimeupdate = () => {
-      setCurrentTime(audio.currentTime);
-    };
-
-    audio.onended = () => {
-      console.log("Audio playback ended");
-      setIsPlaying(false);
-      setCurrentTime(0);
-
-      if (onNextSegment && segmentIndex < totalSegments - 1) {
-        console.log("Moving to next segment after playback ended");
-        setTimeout(() => onNextSegment(), 500);
-      }
-    };
-
-    audio.onplay = () => {
-      console.log("Audio playback started");
-      setIsPlaying(true);
-    };
-
-    audio.onpause = () => {
-      console.log("Audio playback paused");
-      setIsPlaying(false);
-    };
-
-    // Set audio properties
-    audio.volume = volume / 100;
-    audio.playbackRate = playbackRate;
-
-    // Set the source and load the audio
-    audio.src = url;
-    audio.load();
-
-    // Store the audio element in the ref
-    audioRef.current = audio;
-
-    console.log("Audio element initialized");
-  };
-
-  // Refresh presigned URL
-  const refreshPresignedUrl = async () => {
-    if (!segmentId) {
+  // Handle test URL functionality
+  const openUrlInNewTab = (url: string, label: string) => {
+    if (!url) {
       toast({
-        title: "Error",
-        description: "No segment ID provided",
+        title: "No URL",
+        description: `No ${label} available to test`,
         variant: "destructive",
       });
       return;
     }
 
-    try {
-      setIsLoadingUrl(true);
-      setUrlError(null);
-
-      console.log(`Refreshing presigned URL for segment ${segmentId}`);
-      const result = await getPresignedAudioUrl(segmentId);
-
-      if (result.success && result.presignedUrl) {
-        console.log(
-          `Got new presigned URL: ${result.presignedUrl.substring(0, 100)}...`
-        );
-        setPresignedUrl(result.presignedUrl);
-
-        // Initialize audio with the new URL
-        initializeAudio(result.presignedUrl);
-
-        toast({
-          title: "URL Refreshed",
-          description: "Audio URL has been refreshed",
-        });
-      } else {
-        console.error(`Error refreshing presigned URL: ${result.error}`);
-        setUrlError(result.error || "Failed to refresh presigned URL");
-        toast({
-          title: "Error",
-          description: result.error || "Failed to refresh presigned URL",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error("Error refreshing presigned URL:", error);
-      setUrlError(error instanceof Error ? error.message : "Unknown error");
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingUrl(false);
-    }
+    console.log(`Opening ${label} for testing: ${url.substring(0, 100)}...`);
+    window.open(url, "_blank");
   };
-
-  // Handle play/pause
-  const togglePlay = () => {
-    // If browser TTS is playing, stop it
-    if (isBrowserTtsPlaying) {
-      stopSpeaking();
-      return;
-    }
-
-    if (!audioRef.current) {
-      console.error("No audio element available");
-
-      // Fall back to browser TTS if script text is available
-      if (scriptText) {
-        speakText(scriptText, { rate: playbackRate });
-      }
-
-      return;
-    }
-
-    if (isPlaying) {
-      console.log("Pausing audio");
-      audioRef.current.pause();
-    } else {
-      console.log(`Attempting to play audio from: ${audioRef.current.src}`);
-      audioRef.current.play().catch((e) => {
-        console.error("Error playing audio:", e);
-
-        // Fall back to browser TTS if script text is available
-        if (scriptText) {
-          toast({
-            title: "Falling back to browser TTS",
-            description: "Using browser's text-to-speech as fallback",
-          });
-          speakText(scriptText, { rate: playbackRate });
-        } else {
-          toast({
-            title: "Playback Error",
-            description: `Error playing audio: ${e.message}`,
-            variant: "destructive",
-            action: (
-              <Button variant="outline" size="sm" onClick={refreshPresignedUrl}>
-                Refresh URL
-              </Button>
-            ),
-          });
-        }
-      });
-    }
-  };
-
-  // Handle seek
-  const handleSeek = (value: number[]) => {
-    if (!audioRef.current) return;
-
-    const newTime = value[0];
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-  };
-
-  // Skip forward 10 seconds
-  const skipForward = () => {
-    if (!audioRef.current) return;
-
-    const newTime = Math.min(audioRef.current.currentTime + 10, duration);
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-  };
-
-  // Skip backward 10 seconds
-  const skipBackward = () => {
-    if (!audioRef.current) return;
-
-    const newTime = Math.max(audioRef.current.currentTime - 10, 0);
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-  };
-
-  // Handle volume change
-  const handleVolumeChange = (value: number[]) => {
-    if (!audioRef.current) return;
-
-    const newVolume = value[0];
-    audioRef.current.volume = newVolume / 100;
-    setVolume(newVolume);
-  };
-
-  // Handle playback rate change
-  const changePlaybackRate = (rate: number) => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = rate;
-    }
-    setPlaybackRate(rate);
-  };
-
-  // Format time to MM:SS
-  const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
-  };
-
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-      }
-      stopSpeaking();
-    };
-  }, [stopSpeaking]);
 
   return (
     <Card className="bg-gray-50 border shadow-sm">
@@ -498,7 +114,7 @@ export default function ImprovedAudioPlayer({
                     size="sm"
                     variant="ghost"
                     className="h-7 w-7 p-0 rounded-full"
-                    onClick={refreshPresignedUrl}
+                    onClick={() => refreshPresignedUrl()}
                     disabled={isLoadingUrl}
                     title="Refresh audio URL"
                   >
@@ -522,59 +138,13 @@ export default function ImprovedAudioPlayer({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
-                      {presignedUrl && (
-                        <DropdownMenuItem
-                          onClick={() => {
-                            console.log(
-                              `Opening presigned URL for testing: ${presignedUrl.substring(
-                                0,
-                                100
-                              )}...`
-                            );
-                            window.open(presignedUrl, "_blank");
-                          }}
-                        >
-                          Test Presigned URL
-                        </DropdownMenuItem>
-                      )}
-                      {audioUrl && (
-                        <DropdownMenuItem
-                          onClick={() => {
-                            console.log(
-                              `Opening original URL for testing: ${audioUrl.substring(
-                                0,
-                                100
-                              )}...`
-                            );
-                            window.open(audioUrl, "_blank");
-                          }}
-                        >
-                          Test Original URL
-                        </DropdownMenuItem>
-                      )}
-                      {scriptText && (
-                        <DropdownMenuItem
-                          onClick={() => {
-                            console.log("Using browser TTS as fallback");
-                            speakText(scriptText, { rate: playbackRate });
-                          }}
-                        >
-                          Use Browser TTS
-                        </DropdownMenuItem>
-                      )}
-                      {!presignedUrl && !audioUrl && !scriptText && (
-                        <DropdownMenuItem
-                          onClick={() => {
-                            toast({
-                              title: "No URL",
-                              description: "No audio URL available to test",
-                              variant: "destructive",
-                            });
-                          }}
-                        >
-                          No URL Available
-                        </DropdownMenuItem>
-                      )}
+                      <DropdownMenuItem
+                        onClick={() =>
+                          openUrlInNewTab(audioUrl || "", "original URL")
+                        }
+                      >
+                        Test Original URL
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </>
@@ -605,7 +175,7 @@ export default function ImprovedAudioPlayer({
                 max={duration}
                 step={0.1}
                 onValueChange={handleSeek}
-                disabled={!audioRef.current && !isBrowserTtsPlaying}
+                disabled={!audioInitialized}
                 className="cursor-pointer"
               />
             </div>
@@ -620,7 +190,7 @@ export default function ImprovedAudioPlayer({
                 size="sm"
                 variant="ghost"
                 className="h-8 w-8 rounded-full p-0"
-                disabled={(!audioRef.current && !scriptText) || !onPrevSegment}
+                disabled={!audioInitialized || !onPrevSegment}
                 onClick={onPrevSegment}
               >
                 <SkipBack className="h-4 w-4" />
@@ -630,7 +200,7 @@ export default function ImprovedAudioPlayer({
                 size="sm"
                 variant="ghost"
                 className="h-8 w-8 rounded-full p-0"
-                disabled={!audioRef.current && !scriptText}
+                disabled={!audioInitialized}
                 onClick={skipBackward}
               >
                 <Rewind className="h-4 w-4" />
@@ -641,9 +211,9 @@ export default function ImprovedAudioPlayer({
                 variant="default"
                 className="h-9 w-9 rounded-full p-0"
                 onClick={togglePlay}
-                disabled={isLoadingUrl && !scriptText}
+                disabled={isLoadingUrl || !audioInitialized}
               >
-                {isPlaying || isBrowserTtsPlaying ? (
+                {isPlaying ? (
                   <Pause className="h-4 w-4" />
                 ) : (
                   <Play className="h-4 w-4" />
@@ -654,7 +224,7 @@ export default function ImprovedAudioPlayer({
                 size="sm"
                 variant="ghost"
                 className="h-8 w-8 rounded-full p-0"
-                disabled={!audioRef.current && !scriptText}
+                disabled={!audioInitialized}
                 onClick={skipForward}
               >
                 <FastForward className="h-4 w-4" />
@@ -664,7 +234,7 @@ export default function ImprovedAudioPlayer({
                 size="sm"
                 variant="ghost"
                 className="h-8 w-8 rounded-full p-0"
-                disabled={(!audioRef.current && !scriptText) || !onNextSegment}
+                disabled={!audioInitialized || !onNextSegment}
                 onClick={onNextSegment}
               >
                 <SkipForward className="h-4 w-4" />
@@ -678,7 +248,7 @@ export default function ImprovedAudioPlayer({
                     size="sm"
                     variant="ghost"
                     className="h-8 rounded-full p-1 px-2 text-xs flex items-center gap-1"
-                    disabled={!audioRef.current && !scriptText}
+                    disabled={!audioInitialized}
                   >
                     <Settings className="h-3 w-3" />
                     {playbackRate}x

@@ -59,10 +59,15 @@ export async function POST(req: Request) {
     // Combine system message with user messages
     const messagesWithSystem = [systemMessage, ...messages];
 
-    console.log(
-      "Event ID from context:",
-      eventContext?.additionalInfo?.eventId || "No event ID"
-    );
+    // Check if we're using the general assistant context type
+    if (eventContext.contextType === "general-assistant") {
+      console.log("Using general assistant context - no event ID required");
+    } else {
+      console.log(
+        "Event ID from context:",
+        eventContext?.additionalInfo?.eventId || "No event ID"
+      );
+    }
 
     // Optimized Gemini model configuration for script generation
     const result = streamText({

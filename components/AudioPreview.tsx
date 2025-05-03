@@ -38,7 +38,7 @@ export default function AudioPreview({
   title,
   scriptText,
   audioS3key,
-  audioUrl, // Kept for backward compatibility
+  audioUrl,
   segmentId,
   onTtsPlay,
   onTtsStop,

@@ -4,6 +4,8 @@ import { voiceSelectionPrompt } from "./voice-selection";
 import { eventLayoutPrompt } from "./event-layout";
 import { audioGenerationPrompt } from "./audio-generation";
 import { presentationPrompt } from "./presentation";
+import { generalAssistantPrompt } from "./general-assistant";
+import { eventCreationPrompt } from "./event-creation";
 
 /**
  * Generates a system prompt based on context type
@@ -19,6 +21,11 @@ export function generateSystemPrompt(
       return generateEventAssistancePrompt(requiredFields, additionalInfo);
 
     case "event-creation":
+      // If no event ID is provided, use the event creation prompt
+      if (!additionalInfo?.eventId) {
+        return eventCreationPrompt(requiredFields, additionalInfo);
+      }
+      // If an event ID is provided, use the event assistance prompt
       return generateEventAssistancePrompt(requiredFields, additionalInfo);
 
     case "event-layout":
@@ -36,6 +43,9 @@ export function generateSystemPrompt(
     case "presentation":
       return presentationPrompt();
 
+    case "general-assistant":
+      return generalAssistantPrompt(requiredFields, additionalInfo);
+
     default:
       return `You are RhymeAI, an AI assistant for event management.
       Help the user with their event planning needs in a friendly and professional manner.`;
@@ -50,4 +60,6 @@ export {
   eventLayoutPrompt,
   audioGenerationPrompt,
   presentationPrompt,
+  generalAssistantPrompt,
+  eventCreationPrompt,
 };

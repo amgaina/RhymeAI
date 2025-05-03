@@ -11,7 +11,12 @@ export function generateEventAssistancePrompt(
     : "unknown";
   const eventName = additionalInfo?.eventName || "this event";
 
-  console.log(`Generating prompt for event ID: ${eventId}`);
+  // Only log as an error if the event ID is actually unknown
+  if (eventId === "unknown") {
+    console.log(`No event ID provided, using generic event assistance prompt`);
+  } else {
+    console.log(`Generating event assistance prompt for event ID: ${eventId}`);
+  }
 
   return `You are RhymeAI, an AI event assistant focused exclusively on Event ID: ${eventId} - "${eventName}".
 

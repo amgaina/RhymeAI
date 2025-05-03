@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { EventLayout, LayoutSegment } from "@/types/layout";
 import { ScriptSegment } from "@/types/event";
 import { auth } from "@clerk/nextjs/server";
+import { getPresignedUrl } from "@/lib/s3-utils";
 
 // Define EventData type for client-side use
 export interface EventData {
@@ -1230,12 +1231,6 @@ export async function getEventById(eventId: string): Promise<{
         },
       },
     });
-    const chatMessages = await db.chat_messages.findMany({
-      where: {
-        event_id: eventIdNum,
-        user_id: session.userId, // Ensure the user can only access their own events
-      },
-    });
 
     if (!event) {
       return { success: false, error: "Event not found" };
@@ -1274,6 +1269,47 @@ export async function getEventById(eventId: string): Promise<{
       };
     }
 
+    // Process segments to generate presigned URLs for audio files
+    const segmentsWithPresignedUrls = await Promise.all(
+      (event.segments || []).map(async (segment: any) => {
+        let presignedAudioUrl = null;
+
+        // Only generate presigned URL if audio_url exists
+        if (segment.audio_url) {
+          try {
+            // Generate a presigned URL with 24 hour expiration
+            presignedAudioUrl = await getPresignedUrl(
+              segment.audio_url,
+              24 * 3600
+            );
+            console.log(`Generated presigned URL for segment ${segment.id}`);
+          } catch (error) {
+            console.error(
+              `Error generating presigned URL for segment ${segment.id}:`,
+              error
+            );
+            // Continue without the presigned URL if there's an error
+          }
+        }
+
+        return {
+          id: segment.id,
+          type: segment.segment_type,
+          content: segment.content,
+          status: (segment.status || "draft") as
+            | "draft"
+            | "editing"
+            | "generating"
+            | "generated",
+          timing: segment.timing || 0,
+          order: segment.order,
+          audio_url: segment.audio_url, // Keep the original S3 key
+          audio: presignedAudioUrl, // Add the presigned URL
+          presentationSlide: null,
+        };
+      })
+    );
+
     // Format the event data for the client
     const formattedEvent: EventData = {
       id: String(event.event_id),
@@ -1288,20 +1324,7 @@ export async function getEventById(eventId: string): Promise<{
         type: "Professional",
         language: event.language || "English",
       },
-      scriptSegments: (event.segments || []).map((segment: any) => ({
-        id: segment.id,
-        type: segment.segment_type,
-        content: segment.content,
-        status: (segment.status || "draft") as
-          | "draft"
-          | "editing"
-          | "generating"
-          | "generated",
-        timing: segment.timing || 0,
-        order: segment.order,
-        audio_url: segment.audio_url,
-        presentationSlide: null,
-      })),
+      scriptSegments: segmentsWithPresignedUrls,
       layout: formattedLayout,
       createdAt: event.created_at
         ? event.created_at.toISOString()
@@ -1309,7 +1332,6 @@ export async function getEventById(eventId: string): Promise<{
       status: event.status,
       hasPresentation: !!event.has_presentation,
       playCount: event.play_count || 0,
-      chatMessages: chatMessages,
     };
 
     return {

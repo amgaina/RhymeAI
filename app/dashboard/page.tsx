@@ -214,6 +214,20 @@ export default function Dashboard() {
               initialMessage="How can I help with your event planning today? Ask me about creating events, managing voices, or generating scripts."
               placeholder="Ask about event planning..."
               className="border-0 shadow-none"
+              eventContext={{
+                contextType: "general-assistant",
+                requiredFields: [],
+                additionalInfo: {
+                  purpose: "To assist with event planning and management",
+                  totalEvents: events.length,
+                  activeEvents: events.filter((e) => e.status === "ready")
+                    .length,
+                  scriptSegments: events.reduce(
+                    (sum, event) => sum + event.scriptSegments.length,
+                    0
+                  ),
+                },
+              }}
             />
           </Card>
         </div>

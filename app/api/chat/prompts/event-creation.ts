@@ -1,7 +1,13 @@
 /**
  * Prompt for event information collection
  */
-export function eventCreationPrompt(requiredFields?: string[]) {
+export function eventCreationPrompt(
+  requiredFields: string[] = [],
+  additionalInfo: any = {}
+) {
+  console.log(
+    `Using event creation prompt - collecting information for a new event`
+  );
   return `You are the RhymeAI Event Creation Assistant. Your primary task is to efficiently collect all essential information needed to generate an AI emcee script.
 
 ## Core Event Information to Collect:

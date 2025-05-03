@@ -55,7 +55,6 @@ export default function ScriptManager({
   const [selectedSegmentForPreview, setSelectedSegmentForPreview] =
     useState<ScriptSegment | null>(null);
 
-  console.log(segments);
   const handleEdit = (segment: ScriptSegment) => {
     setActiveSegment(segment.id);
     setEditingContent(segment.content);
@@ -367,6 +366,7 @@ export default function ScriptManager({
           title={`Preview: ${selectedSegmentForPreview.type}`}
           scriptText={selectedSegmentForPreview.content}
           audioS3key={selectedSegmentForPreview.audio_url}
+          audioUrl={selectedSegmentForPreview.audio}
           segmentId={selectedSegmentForPreview.id} // Pass the segment ID for presigned URL
           segmentIndex={findSegmentIndex(selectedSegmentForPreview.id)}
           totalSegments={segments.length}
