@@ -35,6 +35,9 @@ importers:
       '@google-cloud/text-to-speech':
         specifier: ^6.0.1
         version: 6.0.1
+      '@google/generative-ai':
+        specifier: ^0.24.1
+        version: 0.24.1
       '@hello-pangea/dnd':
         specifier: ^18.0.1
         version: 18.0.1(@types/react@19.1.2)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -696,6 +699,10 @@ packages:
   '@google-cloud/text-to-speech@6.0.1':
     resolution: {integrity: sha512-d9BLvmrAHTc1is38VdFxFLORvkzhDcfBz4h+j6Af21znj5pMlomX8VV7vD0SyRznORAXcwUaBDQ7zvCfChSA1A==}
     engines: {node: '>=18'}
+
+  '@google/generative-ai@0.24.1':
+    resolution: {integrity: sha512-MqO+MLfM6kjxcKoy0p1wRzG3b4ZZXtPI+z2IE26UogS2Cm/XHO+7gGRBh6gcJsOiIVoH93UwKvW4HdgiOZCy9Q==}
+    engines: {node: '>=18.0.0'}
 
   '@grpc/grpc-js@1.13.3':
     resolution: {integrity: sha512-FTXHdOoPbZrBjlVLHuKbDZnsTxXv2BlHF57xw6LuThXacXvtkahEPED0CKMk6obZDf65Hv4k3z62eyPNpvinIg==}
@@ -4524,6 +4531,8 @@ snapshots:
       google-gax: 5.0.1-rc.0
     transitivePeerDependencies:
       - supports-color
+
+  '@google/generative-ai@0.24.1': {}
 
   '@grpc/grpc-js@1.13.3':
     dependencies:
