@@ -96,7 +96,8 @@ export default function LayoutManager({
   const [showAIChat, setShowAIChat] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [recalculateTimes, setRecalculateTimes] = useState(false);
-
+  // Define segment types
+  console.log("Event Layout:", layout);
   const segmentTypes = [
     { value: "introduction", label: "Introduction" },
     { value: "agenda", label: "Agenda" },

@@ -55,6 +55,9 @@ export default function ScriptManager({
   const [selectedSegmentForPreview, setSelectedSegmentForPreview] =
     useState<ScriptSegment | null>(null);
 
+  // Sort segments by order
+  const sortedSegments = [...segments].sort((a, b) => a.order - b.order);
+
   const handleEdit = (segment: ScriptSegment) => {
     setActiveSegment(segment.id);
     setEditingContent(segment.content);
@@ -200,7 +203,7 @@ export default function ScriptManager({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {segments.length === 0 ? (
+          {sortedSegments.length === 0 ? (
             <div className="p-8 text-center">
               <p className="text-muted-foreground">
                 {hasLayout
@@ -244,10 +247,13 @@ export default function ScriptManager({
               </div>
             </div>
           ) : (
-            segments.map((segment) => (
+            sortedSegments.map((segment) => (
               <div key={segment.id} className="border rounded-md p-3">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="font-medium text-sm capitalize flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-muted text-xs font-medium">
+                      {segment.order}
+                    </span>
                     {segment.type}
                     {segment.timing && (
                       <span className="text-xs text-gray-500 font-normal">

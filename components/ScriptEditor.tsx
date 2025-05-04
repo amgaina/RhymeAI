@@ -35,6 +35,11 @@ export default function ScriptEditor({
   const [activeSegment, setActiveSegment] = useState<number | null>(null);
   const [editingContent, setEditingContent] = useState<string>("");
 
+  // Sort segments by order
+  const sortedSegments = [...segments].sort((a, b) => a.order - b.order);
+
+  console.log("Script segments:", sortedSegments);
+
   const handleEdit = (segment: ScriptSegment) => {
     setActiveSegment(segment.id);
     setEditingContent(segment.content);
@@ -88,7 +93,7 @@ export default function ScriptEditor({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {segments.length === 0 ? (
+        {sortedSegments.length === 0 ? (
           <div className="p-8 text-center">
             <p className="text-muted-foreground">
               No script segments yet. Start a conversation with the AI to
@@ -96,12 +101,17 @@ export default function ScriptEditor({
             </p>
           </div>
         ) : (
-          segments.map((segment) => (
+          sortedSegments.map((segment) => (
             <div key={segment.id} className="border rounded-md p-3">
               <div className="flex justify-between items-center mb-2">
-                <h3 className="font-medium text-sm capitalize">
-                  {segment.type}
-                </h3>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-muted text-xs font-medium">
+                    {segment.order}
+                  </span>
+                  <h3 className="font-medium text-sm capitalize">
+                    {segment.type}
+                  </h3>
+                </div>
                 <div className="flex gap-2">
                   {segment.audio && (
                     <Button
