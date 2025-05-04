@@ -1,13 +1,14 @@
 "use client";
 
-import { Send, Mic } from "lucide-react";
+import { Send, Mic, Clock, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
   input: string;
-  handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void; // Fixed textarea type
+  handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
   isLoading: boolean;
   placeholder?: string;
@@ -33,10 +34,38 @@ export function ChatInput({
   handleSelectPreviousMessage,
 }: ChatInputProps) {
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Set up recording timer
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        setRecordingTime(0);
+      }
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRecording]);
 
   // Function to handle voice input (speech-to-text)
   const handleVoiceInput = () => {
-    // Check if the browser supports the Web Speech API
+    // If already recording, stop it
+    if (isRecording && recognitionRef.current) {
+      recognitionRef.current.stop();
+      return;
+    }
+
+    // Check browser support
     if (
       !("webkitSpeechRecognition" in window) &&
       !("SpeechRecognition" in window)
@@ -47,12 +76,13 @@ export function ChatInput({
       return;
     }
 
-    // Create a speech recognition instance
+    // Create speech recognition instance
     const SpeechRecognition =
       window.webkitSpeechRecognition || window.SpeechRecognition;
     const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
 
-    // Configure the recognition
+    // Configure
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = "en-US";
@@ -64,7 +94,7 @@ export function ChatInput({
     let finalTranscript = "";
 
     // Process results
-    recognition.onresult = (event) => {
+    recognition.onresult = (event: any) => {
       let interimTranscript = "";
 
       for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -75,96 +105,139 @@ export function ChatInput({
         }
       }
 
-      // Update the input field with the current transcript
-      const syntheticEvent = {
-        target: { value: finalTranscript || interimTranscript },
-      } as React.ChangeEvent<HTMLTextAreaElement>; // Fixed to textarea
+      // Update input field
+      const transcript = finalTranscript || interimTranscript;
+      if (transcript) {
+        const syntheticEvent = {
+          target: { value: input ? `${input} ${transcript}` : transcript },
+        } as React.ChangeEvent<HTMLTextAreaElement>;
 
-      handleInputChange(syntheticEvent);
+        handleInputChange(syntheticEvent);
+      }
     };
 
     // Handle end of speech recognition
     recognition.onend = () => {
       setIsRecording(false);
+      recognitionRef.current = null;
     };
 
     // Handle errors
-    recognition.onerror = (event) => {
+    recognition.onerror = (event: any) => {
       console.error("Speech recognition error", event.error);
       setIsRecording(false);
+      recognitionRef.current = null;
     };
+
+    // Auto-stop after 30 seconds of recording
+    setTimeout(() => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    }, 30000);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 relative">
-      <div className="relative">
-        <Textarea
-          value={input}
-          onChange={handleInputChange}
-          placeholder={placeholder}
-          className="flex-1"
-          disabled={isLoading || disabled}
-        />
+    <form ref={formRef} onSubmit={handleSubmit} className="p-4 relative">
+      <div className="flex flex-col gap-2">
+        <div className="relative">
+          <Textarea
+            value={input}
+            onChange={handleInputChange}
+            placeholder={placeholder}
+            className={cn(
+              "pr-24 resize-none min-h-[80px]",
+              isRecording && "border-red-400 focus-visible:ring-red-300"
+            )}
+            disabled={isLoading || disabled}
+            rows={3}
+            onKeyDown={(e) => {
+              // Submit on Enter without Shift key
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (input.trim() && !isLoading && !disabled) {
+                  formRef.current?.requestSubmit();
+                }
+              }
+            }}
+          />
 
-        {/* Add previous conversations button if needed */}
-        {setShowPreviousConversations && (
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="absolute right-14 top-2"
-            onClick={() => setShowPreviousConversations((prev) => !prev)}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          <div className="absolute right-2 bottom-2 flex items-center gap-1">
+            {isRecording && (
+              <div className="flex items-center mr-2 text-xs text-red-500">
+                <div className="w-2 h-2 rounded-full bg-red-500 mr-1 animate-pulse" />
+                {recordingTime}s
+              </div>
+            )}
+
+            {setShowPreviousConversations && (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={() => setShowPreviousConversations((prev) => !prev)}
+                title="Show previous messages"
+              >
+                <Clock className="h-4 w-4" />
+              </Button>
+            )}
+
+            <Button
+              type="button"
+              size="icon"
+              variant={isRecording ? "destructive" : "outline"}
+              disabled={isLoading || disabled}
+              onClick={handleVoiceInput}
+              className="h-8 w-8"
+              title={isRecording ? "Stop recording" : "Start voice input"}
             >
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              <line x1="9" y1="10" x2="15" y2="10" />
-              <line x1="12" y1="7" x2="12" y2="13" />
-            </svg>
-          </Button>
-        )}
+              <Mic className="h-4 w-4" />
+            </Button>
 
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          disabled={isLoading || disabled || isRecording}
-          onClick={handleVoiceInput}
-          className={`absolute right-10 bottom-1 ${
-            isRecording ? "bg-red-100 text-red-500" : ""
-          }`}
-        >
-          <Mic className="h-4 w-4" />
-        </Button>
-        <Button
-          type="submit"
-          size="icon"
-          disabled={isLoading || disabled || !input.trim()}
-          className="bg-primary hover:bg-primary/90 absolute right-1 bottom-1"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
+            <Button
+              type="submit"
+              size="icon"
+              disabled={isLoading || disabled || !input.trim()}
+              className="h-8 w-8 bg-primary hover:bg-primary/90"
+              title="Send message"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="flex items-center text-sm text-red-500 mt-1 gap-1">
+            <AlertCircle className="h-4 w-4" />
+            <span className="flex-1">{error}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.preventDefault();
+                if (formRef.current) {
+                  handleSubmit(new Event("submit") as any);
+                }
+              }}
+              className="text-xs h-7 px-2"
+            >
+              Retry
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Display previous conversations dropdown if enabled */}
+      {/* Previous conversations dropdown */}
       {showPreviousConversations && handleSelectPreviousMessage && (
-        <div className="absolute bottom-full left-0 right-0 bg-background border border-border rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
+        <div className="absolute bottom-full left-0 right-0 bg-background border border-border rounded-md shadow-lg z-10 max-h-48 overflow-y-auto mb-1">
           <div className="p-2">
             <div className="text-xs font-medium text-muted-foreground mb-2">
               Recent messages
             </div>
-            {/* This would be populated with previous messages */}
             <div className="space-y-1">
               <button
+                type="button"
                 className="w-full text-left px-2 py-1 text-xs hover:bg-muted rounded-sm"
                 onClick={() =>
                   handleSelectPreviousMessage(
@@ -175,6 +248,7 @@ export function ChatInput({
                 What's the agenda for the event?
               </button>
               <button
+                type="button"
                 className="w-full text-left px-2 py-1 text-xs hover:bg-muted rounded-sm"
                 onClick={() =>
                   handleSelectPreviousMessage("How many people will attend?")
@@ -184,25 +258,6 @@ export function ChatInput({
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Add a retry button when there's an error */}
-      {error && (
-        <div className="mt-2 text-center">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={(e) => {
-              const form = e.currentTarget.closest("form");
-              if (form) {
-                handleSubmit(new Event("submit") as any);
-              }
-            }}
-            className="text-xs"
-          >
-            Retry
-          </Button>
         </div>
       )}
     </form>

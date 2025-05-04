@@ -5,6 +5,7 @@ import {
 } from "@/app/actions/event/audio-generation";
 import { tool } from "ai";
 import { z } from "zod";
+import { getEventScriptWithPresignedUrls } from "@/app/actions/event";
 
 /**
  * Tool for generating audio from script segments
@@ -125,8 +126,47 @@ export const batchGenerateAudioTool = tool({
   },
 });
 
+/**
+ * Tool for listing all audio files for a specific event
+ */
+
+export const listAudioFilesTool = tool({
+  description: "List all audio files for a specific event",
+  parameters: z.object({
+    eventId: z.string(),
+  }),
+  execute: async (params) => {
+    console.log("Listing audio files for event:", params);
+    try {
+      // Call the server action to list audio files for the event
+      const result = await getEventScriptWithPresignedUrls(params.eventId);
+
+      if (result.success) {
+        return {
+          success: true,
+          audioFiles: result,
+          message: result.message || "Audio files listed successfully",
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error || "Failed to list audio files",
+        };
+      }
+    } catch (error) {
+      console.error("Error listing audio files:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to list audio files",
+      };
+    }
+  },
+});
+
 // Export all audio tools
 export const audioTools = {
   generateAudioTool,
   batchGenerateAudioTool,
+  listAudioFilesTool,
 };

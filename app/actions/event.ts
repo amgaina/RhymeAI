@@ -1545,3 +1545,98 @@ export async function deleteEvent(eventId: string): Promise<{
     };
   }
 }
+
+/**
+ *  listing all audio files for a specific event
+ */
+
+export async function getEventScriptWithPresignedUrls(
+  eventId: string
+): Promise<{ success: boolean; event?: EventData; error?: string }> {
+  try {
+    // Get the authenticated user
+    const session = await auth();
+    if (!session || !session.userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+    const eventIdNum = parseInt(eventId);
+    if (isNaN(eventIdNum)) {
+      return { success: false, error: "Invalid event ID format" };
+    }
+
+    const event = await db.events.findUnique({
+      where: {
+        event_id: eventIdNum,
+        user_id: session.userId, // Ensure the user can only access their own events
+      },
+      include: {
+        segments: true, // Include script segments
+      },
+    });
+    if (!event) {
+      return { success: false, error: "Event not found" };
+    }
+    const segmentsWithPresignedUrls = await Promise.all(
+      (event.segments || []).map(async (segment: any) => {
+        let presignedAudioUrl = null;
+        if (segment.audio_url) {
+          try {
+            presignedAudioUrl = await getPresignedUrl(
+              segment.audio_url,
+              24 * 3600
+            );
+          } catch (error) {
+            console.error(
+              `Error generating presigned URL for segment ${segment.id}:`,
+              error
+            );
+          }
+        }
+        return {
+          id: segment.id,
+          type: segment.segment_type,
+          content: segment.content,
+          status: (segment.status || "draft") as
+            | "draft"
+            | "editing"
+            | "generating"
+            | "generated",
+          timing: segment.timing || 0,
+          order: segment.order,
+          audio: presignedAudioUrl,
+          presentationSlide: null,
+        };
+      })
+    );
+    return {
+      success: true,
+      event: {
+        id: String(event.event_id),
+        name: event.title,
+        type: event.event_type,
+        date: event.event_date
+          ? event.event_date.toISOString().split("T")[0]
+          : "Not specified",
+        location: event.location,
+        description: event.description,
+        voiceSettings: {
+          type: "Professional",
+          language: event.language || "English",
+        },
+        scriptSegments: segmentsWithPresignedUrls,
+        createdAt: event.created_at
+          ? event.created_at.toISOString()
+          : new Date().toISOString(),
+        status: event.status,
+        hasPresentation: !!event.has_presentation,
+        playCount: event.play_count || 0,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching event:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch event",
+    };
+  }
+}

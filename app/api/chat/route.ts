@@ -71,7 +71,7 @@ export async function POST(req: Request) {
 
     // Optimized Gemini model configuration for script generation
     const result = streamText({
-      model: google("gemini-2.5-pro-exp-03-25", {}),
+      model: google("gemini-2.0-flash-exp", {}),
       tools: {
         // Event tools - Create and Store
         store_event_data: eventTools.storeEventDataTool,
@@ -100,6 +100,7 @@ export async function POST(req: Request) {
         // Audio tools
         generate_audio: audioTools.generateAudioTool,
         generate_batch_audio: audioTools.batchGenerateAudioTool,
+        list_all_script_audio: audioTools.listAudioFilesTool,
 
         // Presentation tools
         generate_presentation: presentationTools.generatePresentationTool,

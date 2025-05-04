@@ -87,9 +87,6 @@ export function RhymeAIChat({
       eventId,
       eventContext,
     },
-    onError: (error) => {
-      console.error("Chat error:", error);
-    },
     onFinish: (message) => {
       // If the API returns script data in the message data
       if (message.data?.scriptData) {

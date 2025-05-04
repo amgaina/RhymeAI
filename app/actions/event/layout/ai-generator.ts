@@ -260,29 +260,41 @@ export async function generateAIEventLayout(eventId: string) {
       },
     });
 
-    // Create new segments
-    const createdSegments = await Promise.all(
-      layoutSegments.map((segment) => {
-        // Store start and end times in custom_properties
-        const customProps = {
-          ...segment.customProperties,
-          start_time: segment.startTime || null,
-          end_time: segment.endTime || null,
-        };
+    // Create new segments - but do it sequentially to avoid order conflicts
+    const createdSegments = [];
 
-        return db.layout_segments.create({
+    // Use the already sorted segments from above
+    // Create segments one by one with guaranteed unique order values
+    for (let i = 0; i < layoutSegments.length; i++) {
+      const segment = layoutSegments[i];
+
+      // Store start and end times in custom_properties
+      const customProps = {
+        ...(segment.customProperties || {}),
+        start_time: segment.startTime || null,
+        end_time: segment.endTime || null,
+      };
+
+      try {
+        // Create segment with a guaranteed unique order (i+1)
+        const createdSegment = await db.layout_segments.create({
           data: {
             layout_id: layout.id,
             name: segment.name,
             type: segment.type,
-            description: segment.description,
-            duration: segment.duration,
-            order: segment.order,
+            description: segment.description || `${segment.name} segment`, // Provide default description
+            duration: segment.duration || 15, // Default duration if not provided
+            order: i + 1, // Use index+1 to guarantee unique order
             custom_properties: customProps,
           },
         });
-      })
-    );
+
+        createdSegments.push(createdSegment);
+      } catch (error) {
+        console.error(`Error creating segment ${segment.name}:`, error);
+        throw error; // Re-throw to be caught by the main try/catch
+      }
+    }
 
     // Also store the layout as JSON for backward compatibility
     await db.events.update({

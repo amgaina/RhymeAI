@@ -10,6 +10,7 @@ import { EventLayoutToolView } from "./EventLayoutToolView";
 import { VoiceSettingsToolView } from "./VoiceSettingsToolView";
 import { AudioGenerationToolView } from "./AudioGenerationToolView";
 import { PresentationToolView } from "./PresentationToolView";
+import ScriptAudioToolView from "./ScriptAudioToolView";
 
 interface ToolViewFactoryProps {
   tool: ToolCall;
@@ -63,6 +64,9 @@ export function ToolViewFactory({ tool, eventId }: ToolViewFactoryProps) {
     case "generate_audio":
     case "generate_batch_audio":
       return <AudioGenerationToolView tool={tool} />;
+
+    case "list_all_script_audio":
+      return <ScriptAudioToolView tool={tool} />;
 
     // Presentation tools
     case "generate_presentation":

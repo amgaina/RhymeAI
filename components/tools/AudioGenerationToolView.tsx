@@ -1,6 +1,6 @@
 import { ToolCall } from "./BaseToolView";
 import { Badge } from "@/components/ui/badge";
-import { Volume2, FileAudio, Clock } from "lucide-react";
+import { Volume2, FileAudio, Clock, TimerIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToolCallPart, ToolResultPart } from "ai";
 
@@ -11,7 +11,8 @@ interface AudioGenerationToolViewProps {
 export function AudioGenerationToolView({
   tool,
 }: AudioGenerationToolViewProps) {
-  // Safely check for result existence
+  // Safely check for result
+  console.log(tool);
   if (!tool || !tool.result) {
     return (
       <div className="mt-2 text-sm text-muted-foreground">
