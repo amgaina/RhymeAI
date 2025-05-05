@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, Suspense } from "react";
 import { useEvents } from "@/hooks/useEvents";
 import { useChatEventCreation } from "@/hooks/useChatEventCreation";
-import ChatDashboard from "@/components/dashboard/ChatDashboard";
+import ChatDashboard from "@/components/dashboard/chat-dashboard/ChatDashboard";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -95,17 +95,21 @@ export default function ChatBasedDashboard() {
   );
 
   return (
-    <ChatDashboard
-      events={events}
-      isLoading={isLoading || isDashboardUpdating || isProcessing}
-      isDeleting={isDeleting}
-      onDeleteEvent={handleDeleteEvent}
-      onSelectEvent={handleSelectEvent}
-      onContinueEvent={handleContinueEvent}
-      selectedEventId={selectedEventId}
-      onCreateEvent={handleCreateEvent}
-      onUpdateEvent={handleUpdateEvent}
-      createEventLink="/create-event"
-    />
+    <div className="min-h-screen bg-secondary">
+      <Suspense fallback={<div>Loading...</div>}>
+        <ChatDashboard
+          events={events}
+          isLoading={isLoading || isDashboardUpdating || isProcessing}
+          isDeleting={isDeleting}
+          onDeleteEvent={handleDeleteEvent}
+          onSelectEvent={handleSelectEvent}
+          onContinueEvent={handleContinueEvent}
+          selectedEventId={selectedEventId}
+          onCreateEvent={handleCreateEvent}
+          onUpdateEvent={handleUpdateEvent}
+          createEventLink="/create-event"
+        />
+      </Suspense>
+    </div>
   );
 }

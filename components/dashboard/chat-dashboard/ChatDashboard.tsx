@@ -64,7 +64,7 @@ export default function ChatDashboard({
     ? events.find((e) => e.id === selectedEventId)
     : null;
 
-  // Combined effect to handle URL and state synchronization
+  // Combined effect to handle URL and state synchronizatio
   useEffect(() => {
     // Get current URL event ID
     const urlEventId = searchParams.get("eventId");
