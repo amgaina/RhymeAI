@@ -18,6 +18,7 @@ interface ChatInputProps {
   showPreviousConversations?: boolean;
   setShowPreviousConversations?: React.Dispatch<React.SetStateAction<boolean>>;
   handleSelectPreviousMessage?: (message: string) => void;
+  formRef?: React.RefObject<HTMLFormElement>;
 }
 
 export function ChatInput({
@@ -32,12 +33,14 @@ export function ChatInput({
   showPreviousConversations = false,
   setShowPreviousConversations,
   handleSelectPreviousMessage,
+  formRef: externalFormRef,
 }: ChatInputProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const recognitionRef = useRef<any>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const internalFormRef = useRef<HTMLFormElement>(null);
+  const formRef = externalFormRef || internalFormRef;
 
   // Set up recording timer
   useEffect(() => {

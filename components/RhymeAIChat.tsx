@@ -37,7 +37,8 @@ export function RhymeAIChat({
   onScriptGenerated,
   onVoiceSelected,
   onContinue,
-}: RhymeAIChatProps) {
+  formRef,
+}: RhymeAIChatProps & { formRef?: React.RefObject<HTMLFormElement> }) {
   // Create refs for scrolling
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -309,12 +310,17 @@ export function RhymeAIChat({
   };
 
   // Form submission handler
-  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     handleSubmit(e);
     // Scroll to bottom after submission
     setTimeout(scrollToBottom, 100);
+    return Promise.resolve(); // Make this function return a Promise to match the expected type
   };
+
+  // Use the provided formRef if available
+  const internalFormRef = useRef<HTMLFormElement>(null);
+  const actualFormRef = formRef || internalFormRef;
 
   return (
     <Card className={`w-full border shadow-md ${className}`}>
@@ -371,6 +377,7 @@ export function RhymeAIChat({
           setShowPreviousConversations={setShowPreviousConversations}
           handleSelectPreviousMessage={handleSelectPreviousMessage}
           disabled={!!activeToolPanels.activeToolCall}
+          formRef={actualFormRef}
         />
       </CardContent>
 

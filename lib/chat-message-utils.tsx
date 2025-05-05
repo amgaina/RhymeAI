@@ -8,6 +8,7 @@ import {
   generateAudioForSegment,
   generateBatchAudio,
 } from "@/app/actions/event/audio-generation";
+import { ScriptSegment } from "@/types/event";
 
 /**
  * Transforms chat message content to include audio players, layout viewers, and script viewers
@@ -183,7 +184,9 @@ export function transformChatContent(
       {/* Render script component if script data is available */}
       {scriptData && (
         <ChatEventScript
-          segments={scriptData}
+          segments={scriptData.sort(
+            (a: ScriptSegment, b: ScriptSegment) => a.order - b.order
+          )}
           eventName={eventName}
           compact={true}
           onGenerateAudio={async (segmentId) => {
