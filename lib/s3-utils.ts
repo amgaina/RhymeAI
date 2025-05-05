@@ -104,30 +104,43 @@ export async function getPresignedUrl(
       `Generating presigned URL for key: ${key} with expiration: ${expiresIn} seconds`
     );
 
-    // Verify AWS credentials are available
+    // Log AWS configuration for debugging
+    console.log(`AWS Region: ${process.env.AWS_REGION || "us-east-1"}`);
+    console.log(`S3 Bucket: ${BUCKET_NAME}`);
+    console.log(
+      `AWS Credentials Available: ${!!(
+        process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+      )}`
+    );
+
+    // Verify AWS credentials are available - but don't throw an error
+    // as the SDK might use other credential sources
     if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
-      console.error("AWS credentials are missing in environment variables");
-      throw new Error(
-        "AWS credentials are missing. Please check your environment configuration."
+      console.warn(
+        "AWS credentials are missing in environment variables. Using default credential provider chain."
       );
     }
 
     // Verify bucket name is set
-    if (!process.env.S3_BUCKET_NAME) {
-      console.error("S3_BUCKET_NAME is missing in environment variables");
+    if (!BUCKET_NAME) {
+      console.error("S3_BUCKET_NAME is missing");
       throw new Error(
         "S3 bucket name is missing. Please check your environment configuration."
       );
     }
 
-    // Check if the object exists in S3
-    const exists = await checkS3ObjectExists(key).catch((error) => {
+    // Check if the object exists in S3, but don't block if we can't check
+    try {
+      const exists = await checkS3ObjectExists(key);
+      if (!exists) {
+        console.warn(
+          `Object does not exist in S3: ${key}, but proceeding anyway`
+        );
+        // Don't throw an error, just log a warning and proceed
+      }
+    } catch (error) {
       console.warn(`Error checking if object exists, assuming it does:`, error);
-      return true; // Assume it exists if we can't check
-    });
-
-    if (!exists) {
-      throw new Error(`Object does not exist in S3: ${key}`);
+      // Continue with the presigned URL generation even if we can't check
     }
 
     // Determine the content type based on the file extension

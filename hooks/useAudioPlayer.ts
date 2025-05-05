@@ -121,11 +121,14 @@ export default function useAudioPlayer({
   const fetchPresignedUrl = useCallback(async () => {
     // Skip if initialUrl is provided
     if (initialUrl) {
+      console.log("Using initialUrl instead of fetching presigned URL");
       return;
     }
 
     // Skip if no audioS3key
     if (!audioS3key) {
+      console.warn("No audioS3key provided, cannot fetch presigned URL");
+      setUrlError("No audio source available");
       return;
     }
 
@@ -139,7 +142,10 @@ export default function useAudioPlayer({
       if (result.success && result.url) {
         console.log(`Got presigned URL: ${result.url.substring(0, 100)}...`);
         setAudioUrl(result.url);
-        initializeAudio(result.url);
+        const initialized = initializeAudio(result.url);
+        if (!initialized) {
+          throw new Error("Failed to initialize audio with presigned URL");
+        }
       } else {
         throw new Error(result.error || "Failed to get presigned URL");
       }
@@ -147,8 +153,9 @@ export default function useAudioPlayer({
       console.error("Error fetching presigned URL:", error);
       setUrlError(error instanceof Error ? error.message : "Unknown error");
       toast({
-        title: "Error",
-        description: "Failed to load audio",
+        title: "Audio Error",
+        description:
+          "Failed to load audio. Please check AWS credentials and S3 configuration.",
         variant: "destructive",
       });
     } finally {

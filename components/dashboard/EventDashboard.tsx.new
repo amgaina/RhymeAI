@@ -10,18 +10,18 @@ import {
   Pause,
   SkipBack,
   SkipForward,
+  FastForward,
+  Rewind,
   RefreshCcw,
   AlertCircle,
-  Presentation,
   CheckCircle,
-  Volume2,
-  VolumeX,
+  Presentation,
 } from "lucide-react";
-import { ScriptSegment } from "@/types/event";
-import useAudioPlayer from "@/hooks/useAudioPlayer";
+import { useAudioPlayer } from "@/hooks/useAudioPlayer";
+import { ExtendedScriptSegment } from "@/types/event";
 
 interface EventDashboardProps {
-  segments: ScriptSegment[];
+  segments: ExtendedScriptSegment[];
   isRunning: boolean;
   currentSegmentIndex: number;
   timeElapsed: number;
@@ -29,50 +29,75 @@ interface EventDashboardProps {
   onPlayPause: () => void;
   onPrevSegment: () => void;
   onNextSegment: () => void;
-  onSeekTo: (segmentIndex: number) => void;
+  onSeekTo: (index: number) => void;
 }
 
-// Atomic component for segment badge
-const SegmentTypeBadge = ({ type }: { type: string }) => (
-  <Badge variant="outline" className="capitalize">
-    {type.replace(/_/g, " ")}
-  </Badge>
-);
+// Simple badge to show segment type
+const SegmentTypeBadge = ({ type }: { type: string }) => {
+  const getTypeColor = () => {
+    switch (type) {
+      case "welcome":
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300";
+      case "introduction":
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300";
+      case "main":
+        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
+      case "qa":
+        return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300";
+      case "closing":
+        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
+      default:
+        return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
+    }
+  };
 
-// Atomic component for slide indicator badge
-const SlideIndicator = () => (
-  <Badge variant="secondary" className="flex items-center gap-1">
-    <Presentation className="h-3 w-3" />
-    Slide
-  </Badge>
-);
+  return (
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full capitalize ${getTypeColor()}`}
+    >
+      {type}
+    </span>
+  );
+};
 
-// Atomic component for time display
-const TimeDisplay = ({ time, label }: { time: string; label?: string }) => (
-  <div className="bg-primary/10 px-2 py-1 rounded-md text-primary-foreground text-sm">
-    {time}
-    {label && (
-      <span className="text-xs text-muted-foreground ml-1">{label}</span>
-    )}
-  </div>
-);
+// Simple badge to show slide indicator
+const SlideIndicator = () => {
+  return (
+    <Badge
+      variant="outline"
+      className="text-xs flex items-center gap-1 border-primary/30 text-primary"
+    >
+      <Presentation className="h-3 w-3" />
+      Slide
+    </Badge>
+  );
+};
 
-// Atomic component for segment progress
-const SegmentProgressBar = ({ progress }: { progress: number }) => (
-  <div className="h-1 w-full bg-muted">
-    <div
-      className="h-full bg-primary transition-all duration-300 ease-in-out"
-      style={{ width: `${progress}%` }}
-    />
-  </div>
-);
+// Simple progress bar for segment
+const SegmentProgressBar = ({ progress }: { progress: number }) => {
+  return (
+    <div className="h-1 bg-muted">
+      <div
+        className="h-full bg-primary transition-all duration-300"
+        style={{ width: `${progress}%` }}
+      ></div>
+    </div>
+  );
+};
 
-// Extended ScriptSegment type to include audio property
-interface ExtendedScriptSegment extends ScriptSegment {
-  audio?: string | null; // Some segments might have direct audio URLs
-}
+// Simple time display
+const TimeDisplay = ({ time }: { time: string }) => {
+  return (
+    <Badge
+      variant="outline"
+      className="text-xs border-primary/30 text-primary whitespace-nowrap"
+    >
+      {time}
+    </Badge>
+  );
+};
 
-// Atomic component for audio control with player
+// Audio segment preview button
 const AudioSegmentPreview = ({
   segment,
   onPlaySegment,
@@ -80,36 +105,15 @@ const AudioSegmentPreview = ({
   segment: ExtendedScriptSegment;
   onPlaySegment: (segment: ExtendedScriptSegment) => void;
 }) => {
-  // Use the same hook that SimpleAudioPlayer uses for consistent behavior
-  const { isPlaying, isLoadingUrl, togglePlay, audioInitialized } =
-    useAudioPlayer({
-      // Pass the audio_url as the S3 key
-      audioS3key: segment.audio_url || null,
-      // Also pass any direct audio URL if available
-      initialUrl: segment.audio || null,
-    });
-
-  const handlePlayClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent triggering the parent onClick
-
-    // Set this segment as the active audio segment
-    onPlaySegment(segment);
-
-    // Toggle play state
-    togglePlay();
-  };
-
-  // No audio available
-  if (!segment.audio_url && !segment.audio) {
+  if (!segment.audio_url) {
     return (
       <Button
         variant="ghost"
         size="sm"
-        className="h-6 px-2 text-xs opacity-50"
+        className="h-6 px-2 text-xs text-muted-foreground"
         disabled
       >
-        <VolumeX className="h-3 w-3 mr-1" />
-        No audio
+        No Audio
       </Button>
     );
   }
@@ -118,26 +122,11 @@ const AudioSegmentPreview = ({
     <Button
       variant="ghost"
       size="sm"
-      className="h-6 px-2 text-xs text-primary hover:text-primary"
-      onClick={handlePlayClick}
-      disabled={isLoadingUrl || !audioInitialized}
+      className="h-6 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10"
+      onClick={() => onPlaySegment(segment)}
     >
-      {isLoadingUrl ? (
-        <>
-          <RefreshCcw className="h-3 w-3 mr-1 animate-spin" />
-          Loading...
-        </>
-      ) : isPlaying ? (
-        <>
-          <Pause className="h-3 w-3 mr-1" />
-          Pause
-        </>
-      ) : (
-        <>
-          <Volume2 className="h-3 w-3 mr-1" />
-          Play
-        </>
-      )}
+      <Play className="h-3 w-3 mr-1" />
+      Play
     </Button>
   );
 };
@@ -336,10 +325,41 @@ export default function EventDashboard({
     total: "0:00",
   });
 
-  const [sortedSegments, setSortedSegments] = useState<ExtendedScriptSegment[]>(
-    [...segments].sort((a, b) => a.order - b.order)
+  // Create a utility function to sort segments by order
+  const getSortedSegments = useCallback((segs: ExtendedScriptSegment[]) => {
+    return [...segs].sort((a, b) => {
+      // Ensure we have valid order values (default to 0 if not present)
+      const orderA = typeof a.order === "number" ? a.order : 0;
+      const orderB = typeof b.order === "number" ? b.order : 0;
+      return orderA - orderB;
+    });
+  }, []);
+
+  // Sort segments by order
+  const sortedSegments = useMemo(
+    () => getSortedSegments(segments),
+    [segments, getSortedSegments]
   );
-  const [sortedCurrentIndex, setSortedCurrentIndex] = useState<number>(0);
+
+  // Find the correct index based on the sorted array
+  const sortedCurrentIndex = useMemo(() => {
+    if (
+      !segments.length ||
+      currentSegmentIndex < 0 ||
+      currentSegmentIndex >= segments.length
+    ) {
+      return -1;
+    }
+
+    const currentSegmentId = segments[currentSegmentIndex]?.id;
+    if (!currentSegmentId) {
+      return -1;
+    }
+
+    return sortedSegments.findIndex(
+      (segment) => segment.id === currentSegmentId
+    );
+  }, [segments, currentSegmentIndex, sortedSegments]);
 
   // Format times whenever timeElapsed or totalDuration changes
   useEffect(() => {
@@ -352,6 +372,31 @@ export default function EventDashboard({
 
   // Use a ref to track the last segment ID to avoid unnecessary updates
   const lastPlayedSegmentIdRef = useRef<number | null>(null);
+
+  // Handle advancing to the next segment when audio playback ends
+  const handleSegmentEnd = useCallback(() => {
+    if (!isRunning) return;
+    
+    console.log("Handling segment end, advancing to next segment");
+    
+    // Check if we have a next segment
+    if (sortedCurrentIndex < sortedSegments.length - 1) {
+      // Find the next segment in the sorted array
+      const nextSegmentId = sortedSegments[sortedCurrentIndex + 1].id;
+      
+      // Find the index of this segment in the original array
+      const nextSegmentIndex = segments.findIndex(s => s.id === nextSegmentId);
+      
+      if (nextSegmentIndex >= 0) {
+        console.log(`Advancing to next segment: ${nextSegmentId} (index ${nextSegmentIndex})`);
+        onNextSegment();
+      }
+    } else {
+      console.log("Reached the end of all segments");
+      // Optionally stop the event when all segments have played
+      // onPlayPause();
+    }
+  }, [isRunning, sortedCurrentIndex, sortedSegments, segments, onNextSegment]);
 
   // Play the current segment's audio when the event is running or the current segment changes
   useEffect(() => {
@@ -385,15 +430,13 @@ export default function EventDashboard({
       }
       // Reset the last played segment ID
       lastPlayedSegmentIdRef.current = null;
-
+      
       // If this segment doesn't have audio, automatically advance to the next segment
       // after a short delay to prevent rapid advancement through multiple segments without audio
       if (sortedCurrentIndex < sortedSegments.length - 1) {
-        console.log(
-          `Segment ${currentSegment.id} has no audio, advancing to next segment after delay`
-        );
+        console.log(`Segment ${currentSegment.id} has no audio, advancing to next segment after delay`);
         const timer = setTimeout(() => {
-          onNextSegment();
+          handleSegmentEnd();
         }, 1000);
         return () => clearTimeout(timer);
       }
@@ -407,12 +450,12 @@ export default function EventDashboard({
 
     // Update the last played segment ID
     lastPlayedSegmentIdRef.current = currentSegment.id;
-
+    
     console.log(`Setting active audio segment: ${currentSegment.id}`);
 
     // Set the active audio segment - this will trigger the MiniPlayer to show and play
     setActiveAudioSegment(currentSegment as ExtendedScriptSegment);
-  }, [isRunning, sortedCurrentIndex, sortedSegments, activeAudioSegment]);
+  }, [isRunning, sortedCurrentIndex, sortedSegments, activeAudioSegment, handleSegmentEnd]);
 
   // Format time to MM:SS
   const formatTime = (seconds: number) => {
@@ -443,35 +486,6 @@ export default function EventDashboard({
     const segmentElapsed = timeElapsed - segmentStartTime;
     return Math.min(100, (segmentElapsed / segmentDuration) * 100);
   };
-
-  // Handle advancing to the next segment when audio playback ends
-  const handleSegmentEnd = useCallback(() => {
-    if (!isRunning) return;
-
-    console.log("Handling segment end, advancing to next segment");
-
-    // Check if we have a next segment
-    if (sortedCurrentIndex < sortedSegments.length - 1) {
-      // Find the next segment in the sorted array
-      const nextSegmentId = sortedSegments[sortedCurrentIndex + 1].id;
-
-      // Find the index of this segment in the original array
-      const nextSegmentIndex = segments.findIndex(
-        (s) => s.id === nextSegmentId
-      );
-
-      if (nextSegmentIndex >= 0) {
-        console.log(
-          `Advancing to next segment: ${nextSegmentId} (index ${nextSegmentIndex})`
-        );
-        onNextSegment();
-      }
-    } else {
-      console.log("Reached the end of all segments");
-      // Optionally stop the event when all segments have played
-      // onPlayPause();
-    }
-  }, [isRunning, sortedCurrentIndex, sortedSegments, segments, onNextSegment]);
 
   return (
     <>

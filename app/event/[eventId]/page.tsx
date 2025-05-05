@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
@@ -54,6 +54,7 @@ export default function EventDetailPage() {
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [selectedAudioPreview, setSelectedAudioPreview] = useState<{
     audioUrl: string;
@@ -65,7 +66,13 @@ export default function EventDetailPage() {
   const [isGeneratingLayout, setIsGeneratingLayout] = useState(false);
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
 
-  console.log("selectedAudioPreview ID:", selectedAudioPreview);
+  // Only log when there's a valid segmentId
+  if (selectedAudioPreview && selectedAudioPreview.segmentId) {
+    console.log(
+      "Playing audio for segment ID:",
+      selectedAudioPreview.segmentId
+    );
+  }
 
   // Load specific event data
   useEffect(() => {
@@ -116,6 +123,18 @@ export default function EventDetailPage() {
     }
   }, [eventId, router, toast]);
 
+  // Cleanup interval when component unmounts
+  useEffect(() => {
+    // Cleanup function to clear the interval when component unmounts
+    return () => {
+      console.log("Component unmounting, cleaning up interval");
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, []);
+
   // Calculate total duration of script segments
   const calculateTotalDuration = (segments: ScriptSegment[] = []) => {
     if (!segments || !Array.isArray(segments)) {
@@ -123,12 +142,28 @@ export default function EventDetailPage() {
       return;
     }
 
-    const total = segments.reduce(
+    // Sort segments by order before calculating total duration
+    const orderedSegments = getSortedSegments(segments);
+
+    const total = orderedSegments.reduce(
       (sum, segment) => sum + (segment.timing || 0),
       0
     );
     setTotalDuration(total);
   };
+
+  // Use a ref to track the current segment index to avoid unnecessary updates
+  const lastSegmentIndexRef = useRef<number>(-1);
+
+  // Create a utility function to sort segments by order
+  const getSortedSegments = useCallback((segments: ScriptSegment[]) => {
+    return [...segments].sort((a, b) => {
+      // Ensure we have valid order values (default to 0 if not present)
+      const orderA = typeof a.order === "number" ? a.order : 0;
+      const orderB = typeof b.order === "number" ? b.order : 0;
+      return orderA - orderB;
+    });
+  }, []);
 
   // Toggle event running state
   const toggleEventRunning = () => {
@@ -137,30 +172,60 @@ export default function EventDetailPage() {
       setIsEventRunning(false);
       setTimeElapsed(0);
       setCurrentSegmentIndex(0);
+      lastSegmentIndexRef.current = -1;
+
+      // Clear the interval if it exists
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     } else {
       // Start the event
       setIsEventRunning(true);
 
+      // Clear any existing interval first
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+
       // Create interval to increment time elapsed and manage current segment
-      const interval = setInterval(() => {
+      intervalRef.current = setInterval(() => {
         setTimeElapsed((prev) => {
           const newTime = prev + 1;
 
           // Check if we need to move to the next segment
           if (event) {
             let timeSum = 0;
-            for (let i = 0; i < event.scriptSegments.length; i++) {
-              timeSum += event.scriptSegments[i].timing || 0;
+            let newSegmentIndex = 0;
 
-              if (newTime <= timeSum && i !== currentSegmentIndex) {
-                setCurrentSegmentIndex(i);
+            // Sort segments by order property
+            const orderedSegments = getSortedSegments(event.scriptSegments);
+
+            // Find the segment that corresponds to the current time
+            for (let i = 0; i < orderedSegments.length; i++) {
+              timeSum += orderedSegments[i].timing || 0;
+
+              if (newTime <= timeSum) {
+                // Find the original index of this segment in the unsorted array
+                newSegmentIndex = event.scriptSegments.findIndex(
+                  (s) => s.id === orderedSegments[i].id
+                );
                 break;
               }
             }
 
+            // Only update the segment index if it has changed
+            if (newSegmentIndex !== lastSegmentIndexRef.current) {
+              lastSegmentIndexRef.current = newSegmentIndex;
+              setCurrentSegmentIndex(newSegmentIndex);
+            }
+
             // Check if we've reached the end of the event
             if (newTime >= totalDuration) {
-              clearInterval(interval);
+              if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+              }
               setIsEventRunning(false);
               return totalDuration;
             }
@@ -169,9 +234,6 @@ export default function EventDetailPage() {
           return newTime;
         });
       }, 1000);
-
-      // Cleanup interval on stop
-      return () => clearInterval(interval);
     }
   };
 
@@ -416,7 +478,9 @@ export default function EventDetailPage() {
       return;
     }
 
-    console.log(`Playing audio for segment ${segment.id}`);
+    console.log(
+      `Playing audio for segment ${segment.id} with audio_url: ${segment.audio_url}`
+    );
 
     // Set the audio preview with the segment ID
     // The SimpleAudioPlayer will handle getting a presigned URL
@@ -444,10 +508,18 @@ export default function EventDetailPage() {
 
     setCurrentSegmentIndex(segmentIndex);
 
+    // Sort segments by order
+    const orderedSegments = getSortedSegments(event.scriptSegments);
+
+    // Find the index of the segment in the ordered array
+    const orderedIndex = orderedSegments.findIndex(
+      (segment) => segment.id === event.scriptSegments[segmentIndex]?.id
+    );
+
     // Calculate time elapsed until the beginning of this segment
     let timeSum = 0;
-    for (let i = 0; i < segmentIndex; i++) {
-      timeSum += event.scriptSegments[i]?.timing || 0;
+    for (let i = 0; i < orderedIndex; i++) {
+      timeSum += orderedSegments[i]?.timing || 0;
     }
 
     setTimeElapsed(timeSum);
@@ -455,17 +527,62 @@ export default function EventDetailPage() {
 
   // Handle previous segment
   const handlePrevSegment = () => {
-    if (currentSegmentIndex > 0) {
-      handleSeekToSegment(currentSegmentIndex - 1);
+    if (!event) return;
+
+    // Sort segments by order
+    const orderedSegments = getSortedSegments(event.scriptSegments);
+
+    // Find the current segment in the ordered array
+    const currentSegment = event.scriptSegments[currentSegmentIndex];
+    const orderedIndex = orderedSegments.findIndex(
+      (segment) => segment.id === currentSegment?.id
+    );
+
+    // If we found the segment and it's not the first one, go to the previous one
+    if (orderedIndex > 0) {
+      // Find the index of the previous segment in the original array
+      const prevSegmentId = orderedSegments[orderedIndex - 1].id;
+      const prevSegmentIndex = event.scriptSegments.findIndex(
+        (segment) => segment.id === prevSegmentId
+      );
+
+      if (prevSegmentIndex >= 0) {
+        handleSeekToSegment(prevSegmentIndex);
+      }
     }
   };
 
   // Handle next segment
   const handleNextSegment = () => {
-    if (event && currentSegmentIndex < event.scriptSegments.length - 1) {
-      handleSeekToSegment(currentSegmentIndex + 1);
+    if (!event) return;
+
+    // Sort segments by order
+    const orderedSegments = getSortedSegments(event.scriptSegments);
+
+    // Find the current segment in the ordered array
+    const currentSegment = event.scriptSegments[currentSegmentIndex];
+    const orderedIndex = orderedSegments.findIndex(
+      (segment) => segment.id === currentSegment?.id
+    );
+
+    // If we found the segment and it's not the last one, go to the next one
+    if (orderedIndex >= 0 && orderedIndex < orderedSegments.length - 1) {
+      // Find the index of the next segment in the original array
+      const nextSegmentId = orderedSegments[orderedIndex + 1].id;
+      const nextSegmentIndex = event.scriptSegments.findIndex(
+        (segment) => segment.id === nextSegmentId
+      );
+
+      if (nextSegmentIndex >= 0) {
+        handleSeekToSegment(nextSegmentIndex);
+      }
     }
   };
+
+  // Create a memoized version of the handleNextSegment function for use in callbacks
+  const memoizedHandleNextSegment = useCallback(() => {
+    handleNextSegment();
+  }, [event, currentSegmentIndex]);
 
   // Handle save settings
   const handleSaveSettings = (updatedEvent: EventData) => {
@@ -856,7 +973,7 @@ export default function EventDetailPage() {
                   totalDuration={totalDuration}
                   onPlayPause={toggleEventRunning}
                   onPrevSegment={handlePrevSegment}
-                  onNextSegment={handleNextSegment}
+                  onNextSegment={memoizedHandleNextSegment}
                   onSeekTo={handleSeekToSegment}
                 />
 
