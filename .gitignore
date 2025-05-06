@@ -18,6 +18,7 @@ yarn-error.log*
 
 # env files
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -27,3 +28,9 @@ yarn-error.log*
 next-env.d.ts
 # clerk configuration (can include secrets)
 /.clerk/
+
+# Google Cloud credentials
+rhymeai.json
+*.json.key
+*-credentials.json
+*-service-account.json

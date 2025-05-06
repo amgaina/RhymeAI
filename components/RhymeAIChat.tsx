@@ -1,46 +1,17 @@
 "use client";
 
+import { useEventData } from "@/hooks/useEventData";
+import { ChatHeader } from "./chat/ChatHeader";
+import { ChatMessages } from "./chat/ChatMessages";
+import { ChatInput } from "./chat/ChatInput";
+import { Card, CardContent } from "@/components/ui/card";
+import { ChatFooter } from "./chat/ChatFooter";
+import { ScrollToBottomButton } from "./chat/ScrollToBottomButton";
+import { RhymeAIChatProps } from "@/types/chat";
+import { useRef, useState, useEffect } from "react";
+import { ScriptEditorPanel } from "./script/ScriptEditorPanel";
+import { VoiceSettingsPanel } from "./voice/VoiceSettingsPanel";
 import { useChat } from "@ai-sdk/react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Loader2,
-  Send,
-  Bot,
-  User,
-  CheckCircle2,
-  ListChecks,
-  ArrowDown,
-} from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardFooter,
-} from "@/components/ui/card";
-import { useState, useEffect, useRef } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { convertToSSML, TTSVoiceParams } from "@/lib/tts-utils";
-
-interface RhymeAIChatProps {
-  title?: string;
-  description?: string;
-  initialMessage?: string;
-  placeholder?: string;
-  className?: string;
-  eventContext?: {
-    purpose: string;
-    requiredFields: string[];
-    contextType: "event-creation" | "script-generation" | "general-assistant";
-    additionalInfo?: Record<string, any>;
-  };
-  onEventDataCollected?: (data: any) => void;
-  onScriptGenerated?: (script: any) => void;
-  onVoiceSelected?: (voiceParams: TTSVoiceParams) => void;
-}
 
 export function RhymeAIChat({
   title = "RhymeAI Assistant",
@@ -48,160 +19,256 @@ export function RhymeAIChat({
   initialMessage = "I'm your RhymeAI Assistant, ready to help collect all the information needed for your event's emcee script.",
   placeholder = "Tell me about your event...",
   className = "",
+  eventId,
+  chatSessionId,
+  preserveChat = false,
   eventContext = {
-    purpose: "event-creation",
-    requiredFields: [
-      "eventName",
-      "eventType",
-      "eventDate",
-      "eventLocation",
-      "expectedAttendees",
-      "eventDescription",
-      "voicePreferences",
-      "languagePreferences",
-    ],
     contextType: "event-creation",
+    requiredFields: [
+      "name",
+      "date",
+      "location",
+      "type",
+      "expectedAttendees",
+      "description",
+    ],
   },
   onEventDataCollected,
   onScriptGenerated,
   onVoiceSelected,
-}: RhymeAIChatProps) {
-  const [collectedFields, setCollectedFields] = useState<
-    Record<string, boolean>
-  >({});
-  const [isDataComplete, setIsDataComplete] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showScrollButton, setShowScrollButton] = useState(false);
-  const [scriptData, setScriptData] = useState<any>(null);
-  const [voiceParams, setVoiceParams] = useState<Partial<TTSVoiceParams>>({});
-  const [syncToken, setSyncToken] = useState<string | null>(null);
+  onContinue,
+  formRef,
+}: RhymeAIChatProps & { formRef?: React.RefObject<HTMLFormElement> }) {
+  // Create refs for scrolling
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
+  // State for UI
+  const [scriptData, setScriptData] = useState<any>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [showPreviousConversations, setShowPreviousConversations] =
+    useState(false);
+
+  // Track active tool panels
+  const [activeToolPanels, setActiveToolPanels] = useState<{
+    scriptEditor?: {
+      segmentId?: number;
+      content?: string;
+      toolCallId?: string;
+    };
+    voiceSettings?: {
+      voiceId?: string;
+      toolCallId?: string;
+    };
+    activeToolCall?: string;
+  }>({});
+
+  // Use the AI SDK's useChat hook for core chat functionality
   const {
     messages,
     input,
     handleInputChange,
     handleSubmit,
     isLoading,
+    error,
+    append,
+    reload,
     setMessages,
+    setInput,
+    status,
+    data,
+    addToolResult,
   } = useChat({
-    api: "/api/chat",
+    api: "/api/chat", // Your chat API endpoint
+    id: chatSessionId || `event-${eventId}-${Date.now()}`,
+    initialMessages: initialMessage
+      ? [{ id: "welcome", role: "assistant", content: initialMessage }]
+      : [],
     body: {
+      eventId,
       eventContext,
     },
-    initialMessages: initialMessage
-      ? [
-          {
-            id: "initial-message",
-            role: "assistant",
-            content: initialMessage,
-            parts: [{ type: "text", text: initialMessage }],
-          },
-        ]
-      : undefined,
-    onResponse: (response) => {
-      // Clear any previous errors
-      setError(null);
-
-      // Check if the response has any error status
-      if (!response.ok) {
-        console.error(
-          "API response not OK:",
-          response.status,
-          response.statusText
-        );
-        setError(`API error: ${response.status} ${response.statusText}`);
-      }
-
-      // Extract sync token from response headers for component coordination
-      const token = response.headers.get("X-RhymeAI-Sync-Token");
-      if (token) {
-        setSyncToken(token);
-      }
-    },
     onFinish: (message) => {
-      // Process the completed message to extract fields
-      if (message.content) {
-        extractFieldInfo(message.content);
+      // If the API returns script data in the message data
+      if (message.data?.scriptData) {
+        setScriptData(message.data.scriptData);
       }
-
-      // Try to parse tool calls from the message
-      try {
-        if (message.toolCalls && message.toolCalls.length > 0) {
-          message.toolCalls.forEach((toolCall) => {
-            if (toolCall.name === "store_event_data" && onEventDataCollected) {
-              const eventData = JSON.parse(toolCall.args);
-              onEventDataCollected(eventData);
-
-              // Extract voice parameters if available
-              if (eventData.voicePreference) {
-                setVoiceParams(eventData.voicePreference);
-                onVoiceSelected?.(eventData.voicePreference);
-              }
-            }
-
-            if (toolCall.name === "generate_script" && onScriptGenerated) {
-              const scriptData = JSON.parse(toolCall.args);
-              setScriptData(scriptData);
-              onScriptGenerated(scriptData);
-            }
-          });
-        }
-
-        // Try to extract data from content if no tool calls
-        if (
-          !message.toolCalls &&
-          eventContext?.contextType === "script-generation"
-        ) {
-          const content = message.content;
-          // Look for JSON format in the response
-          const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
-          if (jsonMatch && jsonMatch[1]) {
-            try {
-              const scriptData = JSON.parse(jsonMatch[1]);
-              setScriptData(scriptData);
-              onScriptGenerated?.(scriptData);
-            } catch (e) {
-              console.error("Failed to parse script JSON:", e);
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Error processing AI response:", e);
-      }
-    },
-    onError: (err) => {
-      console.error("Chat API error:", err);
-
-      // Create a more specific error message based on the error type
-      let errorMessage =
-        "Sorry, there was an error communicating with the AI assistant.";
-
-      if (err instanceof TypeError && err.message.includes("ReadableStream")) {
-        errorMessage =
-          "There was an issue with the response stream. Please try again.";
-      } else if (
-        err.message.includes("NetworkError") ||
-        err.message.includes("network")
-      ) {
-        errorMessage =
-          "Network error. Please check your connection and try again.";
-      } else if (
-        err.message.includes("timeout") ||
-        err.message.includes("Timeout")
-      ) {
-        errorMessage = "The request timed out. Please try again.";
-      } else if (err.message === "An error occurred.") {
-        errorMessage =
-          "The AI service encountered an error. This might be temporary - please try again in a moment.";
-      }
-
-      setError(errorMessage);
     },
   });
 
-  // Proper refs for DOM elements
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
+  // Track event data collection separately
+  const {
+    collectedFields,
+    progressPercentage,
+    isDataComplete,
+    handleGenerateScript,
+  } = useEventData({
+    messages,
+    eventContext,
+    onEventDataCollected,
+  });
+
+  // Extract tool calls from messages
+  const toolCalls = messages.flatMap((message) =>
+    message.role === "assistant" && message.toolCalls
+      ? message.toolCalls.map((tool) => ({
+          ...tool,
+          messageId: message.id,
+        }))
+      : []
+  );
+
+  // Initialize by fetching existing messages
+  useEffect(() => {
+    if (eventId) {
+      fetchEventMessages();
+    }
+  }, [eventId]);
+
+  // Fetch existing messages for an event
+  const fetchEventMessages = async () => {
+    if (!eventId) return;
+
+    try {
+      const response = await fetch(`/api/events/${eventId}/messages`);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch event messages");
+      }
+
+      const data = await response.json();
+
+      if (data.messages && Array.isArray(data.messages)) {
+        setMessages(data.messages);
+      }
+
+      // Also fetch script data if available
+      if (data.scriptData) {
+        setScriptData(data.scriptData);
+      }
+    } catch (error) {
+      console.error("Error fetching event messages:", error);
+    }
+  };
+
+  // Monitor tool calls and update active panels
+  useEffect(() => {
+    if (!toolCalls || toolCalls.length === 0) return;
+
+    // Check for script editing tool calls
+    const scriptEditCall = toolCalls.find(
+      (tool) => tool.toolName === "update_script_segment" && !tool.result
+    );
+
+    // Check for voice settings tool calls
+    const voiceSettingsCall = toolCalls.find(
+      (tool) => tool.toolName === "update_voice_settings" && !tool.result
+    );
+
+    // Update active panels based on tool calls
+    if (scriptEditCall) {
+      setActiveToolPanels((prev) => ({
+        ...prev,
+        scriptEditor: {
+          segmentId: scriptEditCall.args?.segmentId,
+          content: scriptEditCall.args?.content,
+          toolCallId: scriptEditCall.toolCallId,
+        },
+        activeToolCall: scriptEditCall.toolCallId,
+      }));
+    } else if (voiceSettingsCall) {
+      setActiveToolPanels((prev) => ({
+        ...prev,
+        voiceSettings: {
+          voiceId: voiceSettingsCall.args?.voiceId,
+          toolCallId: voiceSettingsCall.toolCallId,
+        },
+        activeToolCall: voiceSettingsCall.toolCallId,
+      }));
+    }
+  }, [toolCalls]);
+
+  // Handle script editor submit - use AI SDK's addToolResult
+  const handleScriptEditorSubmit = (content: string) => {
+    if (activeToolPanels.scriptEditor?.toolCallId) {
+      // Use the AI SDK's addToolResult method
+      addToolResult({
+        toolCallId: activeToolPanels.scriptEditor.toolCallId,
+        result: {
+          success: true,
+          content,
+          segmentId: activeToolPanels.scriptEditor.segmentId,
+        },
+      });
+
+      // Close the panel
+      setActiveToolPanels((prev) => ({
+        ...prev,
+        scriptEditor: undefined,
+        activeToolCall: undefined,
+      }));
+
+      // Notify parent if callback provided
+      if (onScriptGenerated) {
+        onScriptGenerated({
+          segmentId: activeToolPanels.scriptEditor.segmentId,
+          content,
+        });
+      }
+    }
+  };
+
+  // Handle voice settings submit
+  const handleVoiceSettingsSubmit = (settings: any) => {
+    if (activeToolPanels.voiceSettings?.toolCallId) {
+      // Use the AI SDK's addToolResult method
+      addToolResult({
+        toolCallId: activeToolPanels.voiceSettings.toolCallId,
+        result: {
+          success: true,
+          settings,
+        },
+      });
+
+      // Close the panel
+      setActiveToolPanels((prev) => ({
+        ...prev,
+        voiceSettings: undefined,
+        activeToolCall: undefined,
+      }));
+
+      // Notify parent if callback provided
+      if (onVoiceSelected) {
+        onVoiceSelected(settings);
+      }
+    }
+  };
+
+  // Cancel any active tool panels
+  const handleCancelToolPanel = () => {
+    if (activeToolPanels.activeToolCall) {
+      // Use the AI SDK's addToolResult method
+      addToolResult({
+        toolCallId: activeToolPanels.activeToolCall,
+        result: {
+          success: false,
+          error: "User cancelled the operation",
+        },
+      });
+    }
+
+    setActiveToolPanels({});
+  };
+
+  // Custom scroll handling function
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (!chatContainerRef.current) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+
+    // Show scroll button if not at bottom
+    setShowScrollButton(scrollTop < scrollHeight - clientHeight - 100);
+  };
 
   // Scroll to bottom function
   const scrollToBottom = () => {
@@ -210,571 +277,123 @@ export function RhymeAIChat({
     }
   };
 
-  // Handle scroll events to show/hide scroll button
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    // Show button when not at bottom (with a small threshold for better UX)
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
-    setShowScrollButton(!isNearBottom);
+  // Load more messages (pagination) - implement as needed
+  const loadMoreMessages = async () => {
+    console.log("Loading more messages for event:", eventId);
+    // This would be implemented based on your pagination needs
   };
 
-  // Auto-scroll to bottom when new messages are added
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  // Track collected information
-  useEffect(() => {
-    const allRequiredFields = eventContext?.requiredFields || [];
-    const requiredFieldsCollected = allRequiredFields.every(
-      (field) => collectedFields[field]
-    );
-    setIsDataComplete(requiredFieldsCollected && allRequiredFields.length > 0);
-  }, [collectedFields, eventContext?.requiredFields]);
-
-  // Extract field information from messages
-  const extractFieldInfo = (content: string) => {
-    const newCollectedFields = { ...collectedFields };
-    const fieldPatterns =
-      eventContext?.requiredFields?.map((field) => ({
-        field,
-        regex: new RegExp(`${field}[:\\s]+(.*?)(?=\\n|$)`, "i"),
-      })) || [];
-
-    fieldPatterns.forEach(({ field, regex }) => {
-      if (content.toLowerCase().includes(field.toLowerCase())) {
-        newCollectedFields[field] = true;
-      }
-    });
-
-    setCollectedFields(newCollectedFields);
+  // Handle selection of previous message
+  const handleSelectPreviousMessage = (message: string) => {
+    setInput(message);
+    setShowPreviousConversations(false);
   };
 
-  // Custom submit handler with error handling and retry logic
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null); // Clear any existing errors
-
-    // Save the current input value before submission
-    const currentInput = input;
-
+  // Generate audio function
+  const generateAudio = async (segmentId?: number) => {
     try {
-      await handleSubmit(e);
-    } catch (err) {
-      console.error("Error submitting message:", err);
-      setError("Failed to send message. Please try again.");
-
-      // Add retry button functionality by keeping the input value
-      // The retry will happen when the user clicks submit again with the same input
-    }
-  };
-
-  // Generate script when all data is collected
-  const handleGenerateScript = () => {
-    if (isDataComplete && onEventDataCollected) {
-      // Extract event data from conversation
-      const eventData: Record<string, string> = {};
-      eventContext?.requiredFields?.forEach((field) => {
-        messages.forEach((msg) => {
-          if (
-            msg.content &&
-            msg.content.toLowerCase().includes(field.toLowerCase())
-          ) {
-            const match = msg.content.match(
-              new RegExp(`${field}[:\\s]+(.*?)(?=\\n|$)`, "i")
-            );
-            if (match && match[1]) {
-              eventData[field] = match[1].trim();
-            }
-          }
-        });
-      });
-
-      onEventDataCollected(eventData);
-
-      // Add a message to transition to script generation
-      setMessages([
-        ...messages,
-        {
-          id: "transition-message",
-          role: "assistant",
-          content:
-            "Great! I've collected all the necessary information. Now let's create an emcee script for your event.",
-          parts: [
-            {
-              type: "text",
-              text: "Great! I've collected all the necessary information. Now let's create an emcee script for your event.",
-            },
-          ],
-        },
-      ]);
-    }
-  };
-
-  // Generate SSML when script data changes
-  useEffect(() => {
-    if (scriptData && eventContext?.contextType === "script-generation") {
-      try {
-        const ssml = convertToSSML(scriptData);
-        console.log("Generated SSML for TTS:", ssml);
-        // You would typically send this SSML to your TTS API here
-      } catch (e) {
-        console.error("Failed to generate SSML:", e);
-      }
-    }
-  }, [scriptData, eventContext?.contextType]);
-
-  // Function to generate audio from the script
-  const generateAudio = async () => {
-    if (!scriptData) return;
-
-    try {
-      const ssml = convertToSSML(scriptData);
-
-      // Example API call to a TTS service (implementation depends on your TTS provider)
-      const response = await fetch("/api/tts", {
+      const response = await fetch(`/api/audio/generate`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ssml,
-          voiceParams,
-          syncToken,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, segmentId }),
       });
 
-      if (!response.ok) {
-        throw new Error("TTS generation failed");
-      }
+      if (!response.ok) throw new Error("Failed to generate audio");
 
-      const audioData = await response.blob();
+      const data = await response.json();
+      if (data.scriptData) setScriptData(data.scriptData);
 
-      // Create an audio element to play the generated speech
-      const audioUrl = URL.createObjectURL(audioData);
-      const audio = new Audio(audioUrl);
-      audio.play();
-
-      // Clean up URL object after audio finishes playing
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-      };
+      return data;
     } catch (error) {
-      console.error("Failed to generate TTS audio:", error);
+      console.error("Error generating audio:", error);
     }
   };
 
-  // Calculate progress percentage
-  const progressPercentage = eventContext?.requiredFields?.length
-    ? Math.round(
-        (Object.values(collectedFields).filter(Boolean).length /
-          eventContext.requiredFields.length) *
-          100
-      )
-    : 0;
-
-  // Custom styles for markdown components
-  const markdownStyles = {
-    p: "my-2",
-    h1: "text-2xl font-bold my-4",
-    h2: "text-xl font-bold my-3",
-    h3: "text-lg font-bold my-2",
-    h4: "text-base font-bold my-2",
-    h5: "text-sm font-bold my-1",
-    h6: "text-xs font-bold my-1",
-    ul: "list-disc pl-5 my-2",
-    ol: "list-decimal pl-5 my-2",
-    li: "my-1",
-    a: "text-blue-500 hover:underline",
-    blockquote: "border-l-4 border-gray-300 pl-4 italic my-2",
-    code: "font-mono text-sm bg-gray-100 dark:bg-gray-800 rounded px-1 py-0.5",
-    pre: "bg-gray-100 dark:bg-gray-800 p-3 rounded-md overflow-x-auto my-3 font-mono text-sm",
-    hr: "border-t my-4",
-    table: "min-w-full divide-y divide-gray-200 my-4",
-    th: "px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
-    td: "px-3 py-1 whitespace-nowrap",
-    img: "max-w-full h-auto my-3 rounded-md",
-    strong: "font-bold",
-    em: "italic",
+  // Form submission handler
+  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    handleSubmit(e);
+    // Scroll to bottom after submission
+    setTimeout(scrollToBottom, 100);
+    return Promise.resolve(); // Make this function return a Promise to match the expected type
   };
+
+  // Use the provided formRef if available
+  const internalFormRef = useRef<HTMLFormElement>(null);
+  const actualFormRef = formRef || internalFormRef;
 
   return (
     <Card className={`w-full border shadow-md ${className}`}>
-      <CardHeader className="bg-primary/5 border-b">
-        <CardTitle className="text-primary flex items-center gap-2">
-          <Bot className="h-5 w-5" />
-          {title}
-        </CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-
-        {/* Progress indicator */}
-        {eventContext?.contextType === "event-creation" && (
-          <div className="mt-2">
-            <div className="flex justify-between text-xs mb-1">
-              <span>Information collection: {progressPercentage}%</span>
-              <span>
-                {Object.values(collectedFields).filter(Boolean).length}/
-                {eventContext.requiredFields.length} fields
-              </span>
-            </div>
-            <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary transition-all duration-300 ease-in-out"
-                style={{ width: `${progressPercentage}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </CardHeader>
+      <ChatHeader
+        title={title}
+        description={description}
+        progressPercentage={progressPercentage}
+        collectedFields={collectedFields}
+        eventContext={eventContext}
+      />
 
       <CardContent className="p-0">
-        <div
-          className="flex-1 space-y-4 p-4 min-h-[400px] max-h-[600px] overflow-y-auto"
-          onScroll={handleScroll}
-          ref={chatContainerRef}
-        >
-          {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-[350px] text-center p-8">
-              <Bot className="h-12 w-12 text-primary/60 mb-4" />
-              <p className="text-muted-foreground text-sm max-w-md">
-                {initialMessage}
-              </p>
-            </div>
-          ) : (
-            messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex flex-col ${
-                  message.role === "user" ? "items-end" : "items-start"
-                }`}
-              >
-                <div
-                  className={`flex gap-2 max-w-[80%] px-4 py-3 rounded-lg ${
-                    message.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
-                  }`}
-                >
-                  <div className="shrink-0 mt-0.5">
-                    {message.role === "user" ? (
-                      <User className="h-5 w-5" />
-                    ) : (
-                      <Bot className="h-5 w-5" />
-                    )}
-                  </div>
-                  <div className="markdown-content">
-                    <div className="font-medium text-sm mb-1">
-                      {message.role === "user" ? "You" : "RhymeAI"}
-                    </div>
-                    {message.parts
-                      ?.filter((part) => part.type !== "source")
-                      .map((part, index) => {
-                        if (part.type === "text") {
-                          return (
-                            <div
-                              key={index}
-                              className="whitespace-pre-wrap text-sm"
-                            >
-                              <ReactMarkdown
-                                remarkPlugins={[remarkGfm]}
-                                components={{
-                                  p: ({ node, ...props }) => (
-                                    <p
-                                      className={markdownStyles.p}
-                                      {...props}
-                                    />
-                                  ),
-                                  h1: ({ node, ...props }) => (
-                                    <h1
-                                      className={markdownStyles.h1}
-                                      {...props}
-                                    />
-                                  ),
-                                  h2: ({ node, ...props }) => (
-                                    <h2
-                                      className={markdownStyles.h2}
-                                      {...props}
-                                    />
-                                  ),
-                                  h3: ({ node, ...props }) => (
-                                    <h3
-                                      className={markdownStyles.h3}
-                                      {...props}
-                                    />
-                                  ),
-                                  h4: ({ node, ...props }) => (
-                                    <h4
-                                      className={markdownStyles.h4}
-                                      {...props}
-                                    />
-                                  ),
-                                  h5: ({ node, ...props }) => (
-                                    <h5
-                                      className={markdownStyles.h5}
-                                      {...props}
-                                    />
-                                  ),
-                                  h6: ({ node, ...props }) => (
-                                    <h6
-                                      className={markdownStyles.h6}
-                                      {...props}
-                                    />
-                                  ),
-                                  ul: ({ node, ...props }) => (
-                                    <ul
-                                      className={markdownStyles.ul}
-                                      {...props}
-                                    />
-                                  ),
-                                  ol: ({ node, ...props }) => (
-                                    <ol
-                                      className={markdownStyles.ol}
-                                      {...props}
-                                    />
-                                  ),
-                                  li: ({ node, ...props }) => (
-                                    <li
-                                      className={markdownStyles.li}
-                                      {...props}
-                                    />
-                                  ),
-                                  a: ({ node, ...props }) => (
-                                    <a
-                                      className={markdownStyles.a}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      {...props}
-                                    />
-                                  ),
-                                  blockquote: ({ node, ...props }) => (
-                                    <blockquote
-                                      className={markdownStyles.blockquote}
-                                      {...props}
-                                    />
-                                  ),
-                                  code: ({
-                                    node,
-                                    inline,
-                                    className,
-                                    children,
-                                    ...props
-                                  }: any) =>
-                                    inline ? (
-                                      <code
-                                        className={markdownStyles.code}
-                                        {...props}
-                                      >
-                                        {children}
-                                      </code>
-                                    ) : (
-                                      <code
-                                        className={markdownStyles.code}
-                                        {...props}
-                                      >
-                                        {children}
-                                      </code>
-                                    ),
-                                  pre: ({ node, ...props }) => (
-                                    <pre
-                                      className={markdownStyles.pre}
-                                      {...props}
-                                    />
-                                  ),
-                                  hr: ({ node, ...props }) => (
-                                    <hr
-                                      className={markdownStyles.hr}
-                                      {...props}
-                                    />
-                                  ),
-                                  table: ({ node, ...props }) => (
-                                    <table
-                                      className={markdownStyles.table}
-                                      {...props}
-                                    />
-                                  ),
-                                  th: ({ node, ...props }) => (
-                                    <th
-                                      className={markdownStyles.th}
-                                      {...props}
-                                    />
-                                  ),
-                                  td: ({ node, ...props }) => (
-                                    <td
-                                      className={markdownStyles.td}
-                                      {...props}
-                                    />
-                                  ),
-                                  img: ({ node, ...props }) => (
-                                    <img
-                                      className={markdownStyles.img}
-                                      {...props}
-                                    />
-                                  ),
-                                  strong: ({ node, ...props }) => (
-                                    <strong
-                                      className={markdownStyles.strong}
-                                      {...props}
-                                    />
-                                  ),
-                                  em: ({ node, ...props }) => (
-                                    <em
-                                      className={markdownStyles.em}
-                                      {...props}
-                                    />
-                                  ),
-                                }}
-                              >
-                                {part.text}
-                              </ReactMarkdown>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })}
-                  </div>
-                </div>
+        {/* Render active tool panels when needed */}
+        {activeToolPanels.scriptEditor && (
+          <ScriptEditorPanel
+            initialContent={activeToolPanels.scriptEditor.content || ""}
+            segmentId={activeToolPanels.scriptEditor.segmentId}
+            onSubmit={handleScriptEditorSubmit}
+            onCancel={handleCancelToolPanel}
+          />
+        )}
 
-                {message.parts
-                  ?.filter((part) => part.type === "source")
-                  .map((part) => (
-                    <div
-                      key={`source-${part.source.id}`}
-                      className="text-xs text-muted-foreground mt-1"
-                    >
-                      Source: [
-                      <a
-                        href={part.source.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline hover:text-primary"
-                      >
-                        {part.source.title ?? new URL(part.source.url).hostname}
-                      </a>
-                      ]
-                    </div>
-                  ))}
-              </div>
-            ))
-          )}
+        {activeToolPanels.voiceSettings && (
+          <VoiceSettingsPanel
+            voiceId={activeToolPanels.voiceSettings.voiceId}
+            onSubmit={handleVoiceSettingsSubmit}
+            onCancel={handleCancelToolPanel}
+          />
+        )}
 
-          {/* Display error message if there is one */}
-          {error && (
-            <div className="flex items-center justify-center py-2">
-              <div className="bg-red-50 text-red-600 px-4 py-2 rounded-md text-sm flex items-center">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="mr-2"
-                >
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                {error}
-              </div>
-            </div>
-          )}
+        <ChatMessages
+          messages={messages}
+          isLoading={isLoading}
+          error={error ? String(error) : null}
+          messagesEndRef={messagesEndRef}
+          chatContainerRef={chatContainerRef}
+          initialMessage={initialMessage}
+          handleScroll={handleScroll}
+          loadMoreMessages={loadMoreMessages}
+          hasMoreMessages={false} // Implement logic for pagination
+          isLoadingHistory={false} // Implement logic for loading history
+          eventId={eventId}
+        />
 
-          {isLoading && (
-            <div className="flex items-center justify-center py-2">
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
-
-        <div className="p-4 border-t">
-          <form
-            onSubmit={handleFormSubmit}
-            className="flex items-center space-x-2"
-          >
-            <Input
-              value={input}
-              onChange={handleInputChange}
-              placeholder={placeholder}
-              className="flex-1"
-              disabled={isLoading}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              disabled={isLoading || !input.trim()}
-              className="bg-primary hover:bg-primary/90"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </form>
-
-          {/* Add a retry button when there's an error */}
-          {error && (
-            <div className="mt-2 text-center">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleFormSubmit}
-                className="text-xs"
-              >
-                Retry
-              </Button>
-            </div>
-          )}
-        </div>
+        <ChatInput
+          input={input}
+          handleInputChange={handleInputChange}
+          handleSubmit={handleFormSubmit}
+          placeholder={placeholder}
+          isLoading={isLoading || !!activeToolPanels.activeToolCall}
+          error={error ? String(error) : null}
+          eventId={eventId}
+          showPreviousConversations={showPreviousConversations}
+          setShowPreviousConversations={setShowPreviousConversations}
+          handleSelectPreviousMessage={handleSelectPreviousMessage}
+          disabled={!!activeToolPanels.activeToolCall}
+          formRef={actualFormRef}
+        />
       </CardContent>
 
-      {eventContext?.contextType === "event-creation" && (
-        <CardFooter className="flex justify-between border-t p-4 bg-muted/20">
-          <div className="flex gap-2 text-sm text-muted-foreground">
-            <ListChecks className="h-4 w-4" />
-            <span>
-              Fields remaining:{" "}
-              {eventContext.requiredFields.length -
-                Object.values(collectedFields).filter(Boolean).length}
-            </span>
-          </div>
+      <ChatFooter
+        eventContext={eventContext}
+        progressPercentage={progressPercentage}
+        collectedFields={collectedFields}
+        isDataComplete={isDataComplete}
+        handleGenerateScript={handleGenerateScript}
+        eventId={eventId?.toString()}
+        onContinue={onContinue}
+        scriptData={scriptData}
+        generateAudio={generateAudio}
+      />
 
-          <Button
-            onClick={handleGenerateScript}
-            disabled={!isDataComplete}
-            className="gap-2"
-            size="sm"
-            variant={isDataComplete ? "default" : "outline"}
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            Generate Script
-          </Button>
-        </CardFooter>
-      )}
-
-      {eventContext?.contextType === "script-generation" && scriptData && (
-        <CardFooter className="flex justify-end border-t p-4 bg-muted/20">
-          <Button
-            onClick={generateAudio}
-            className="gap-2"
-            size="sm"
-            variant="default"
-          >
-            Generate Audio
-          </Button>
-        </CardFooter>
-      )}
-
-      {showScrollButton && (
-        <Button
-          onClick={scrollToBottom}
-          className="fixed bottom-24 right-8 bg-primary text-primary-foreground shadow-md hover:bg-primary/90 rounded-full z-10"
-          size="icon"
-        >
-          <ArrowDown className="h-5 w-5" />
-        </Button>
-      )}
+      {showScrollButton && <ScrollToBottomButton onClick={scrollToBottom} />}
     </Card>
   );
 }

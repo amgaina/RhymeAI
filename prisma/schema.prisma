@@ -9,26 +9,179 @@ datasource db {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model events {
-  event_id       Int       @id @default(autoincrement())
-  created_at     DateTime? @default(now()) @db.Timestamptz(6)
-  user_id        String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
-  title          String?
-  description    String?
-  status         Boolean?
-  location       String?
-  eventdate      DateTime? @db.Timestamp(6)
-  eventstarttime DateTime? @db.Time(6)
-  eventendtime   DateTime? @db.Time(6)
-  voicestyle     String?
-  presentation   String?
-  scriptcontent  String?
-  updatedat      DateTime? @db.Timestamp(6)
+  event_id         Int       @id @default(autoincrement())
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime? @updatedAt @db.Timestamptz(6)
+  user_id          String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+
+  // Basic event information
+  title            String
+  description      String?   @db.Text
+  event_type       String    // Conference, Webinar, Workshop, Corporate Event, etc.
+  status           String    @default("draft") // draft, ready, completed, cancelled
+  location         String?
+  event_date       DateTime  @db.Date
+  start_time       DateTime? @db.Time(6)
+  end_time         DateTime? @db.Time(6)
+  expected_attendees Int?
+
+  // Voice settings
+  voice_settings   Json?     // Stores voice preferences like gender, age, tone, accent, speed
+  language         String    @default("English")
+
+  // Script management
+  script_segments  Json[]    // Array of script segments with content, timing, status (deprecated, use segments relation)
+  segments         script_segments[] // Script segments relation
+
+  // Layout management
+  event_layout     Json?     // Deprecated: JSON layout storage
+  layout           event_layout? // New: Relational layout
+
+  // Presentation and media
+  has_presentation Boolean   @default(false)
+  presentation_slides Json?  // Information about presentation slides
+
+  // Recording and streaming
+  recording_devices Json?    // Information about connected recording devices
+  streaming_destinations Json? // Information about streaming platforms
+
+  // Advanced settings
+  event_settings   Json?     // Additional settings like autoAdaptive, autoSlideTransition
+
+  // Relations
+  user             users?    @relation(fields: [user_id], references: [user_id])
+  analytics        user_analytics[]
+  chat_messages    chat_messages[]
+
+  // Analytics and tracking
+  total_duration   Int?      // Total duration in seconds
+  play_count       Int       @default(0)
+  last_played      DateTime? @db.Timestamptz(6)
+
+  @@index([user_id])
+  @@index([event_date])
+  @@index([status])
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model users {
-  id      Int      @id @default(autoincrement())
-  name    String
-  user_id String   @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
-  events  String[] @default([])
+  id         Int      @id @default(autoincrement())
+  name       String
+  user_id    String   @unique @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+  email      String?  @unique
+  avatar_url String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  user_events events[]
+  analytics   user_analytics[]
+  chat_messages chat_messages[]
+
+  // Preferences
+  preferences Json?
+
+  @@index([user_id])
+}
+
+// Event layout model - top level container for layout segments
+model event_layout {
+  id                Int              @id @default(autoincrement())
+  event_id          Int              @unique // One layout per event
+  total_duration    Int              // Total duration in minutes
+  layout_version    Int              @default(1)
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+  last_generated_by String?          // ID or name of the LLM model used
+  chat_context      String?          @db.Text // Relevant context from chat that influenced the layout
+
+  // Relations
+  event             events           @relation(fields: [event_id], references: [event_id], onDelete: Cascade)
+  segments          layout_segments[]
+
+  @@index([event_id])
+}
+
+// Layout segments model - individual segments within a layout
+model layout_segments {
+  id                String           @id @default(uuid())
+  layout_id         Int
+  name              String
+  type              String           // introduction, keynote, panel, etc.
+  description       String           @db.Text
+  duration          Int              // Duration in minutes
+  order             Int
+  start_time        String?          // Start time in format "HH:MM AM/PM"
+  end_time          String?          // End time in format "HH:MM AM/PM"
+  custom_properties Json?            // For segment-specific properties
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+
+  // Relations
+  layout            event_layout     @relation(fields: [layout_id], references: [id], onDelete: Cascade)
+  script_segments   script_segments[]
+
+  @@unique([layout_id, order]) // Enforce unique ordering within a layout
+  @@index([layout_id])
+}
+
+// Optional: Model for script segments if you want to store them separately
+model script_segments {
+  id                Int              @id @default(autoincrement())
+  event_id          Int
+  layout_segment_id String?          // Reference to the layout segment that generated this script
+  segment_type      String           // introduction, agenda, speaker_intro, etc.
+  content           String           @db.Text
+  audio_url         String?
+  status            String           @default("draft") // draft, editing, generated, generating
+  timing            Int              @default(0) // Duration in seconds
+  order             Int              @default(0)
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+
+  // Relations
+  event             events           @relation(fields: [event_id], references: [event_id], onDelete: Cascade)
+  layout_segment    layout_segments? @relation(fields: [layout_segment_id], references: [id], onDelete: SetNull)
+
+  @@index([event_id])
+  @@index([layout_segment_id])
+}
+
+// Additional utility model for managing user preferences and analytics
+model user_analytics {
+  id          Int       @id @default(autoincrement())
+  user_id     String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+  event_id    Int
+  accessed_at DateTime  @default(now()) @db.Timestamptz(6)
+  action      String    // view, edit, play, share, etc.
+  metadata    Json?     // Additional action metadata
+
+  // Relations
+  user        users     @relation(fields: [user_id], references: [user_id])
+  event       events    @relation(fields: [event_id], references: [event_id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([event_id])
+  @@index([accessed_at])
+}
+
+// Model for storing chat messages related to event creation
+model chat_messages {
+  id            Int       @id @default(autoincrement())
+  event_id      Int
+  user_id       String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+  role          String    // "user" or "assistant"
+  content       String    @db.Text
+  message_id    String    // Unique ID from the chat system
+  tool_calls    Json?     // Store any tool calls made by the assistant
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  event         events    @relation(fields: [event_id], references: [event_id], onDelete: Cascade)
+  user          users     @relation(fields: [user_id], references: [user_id])
+
+  @@index([event_id])
+  @@index([user_id])
+  @@index([created_at])
+  @@index([message_id])
 }

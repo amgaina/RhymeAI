@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,29 +18,25 @@ import {
   AlertCircle,
   PlusCircle,
   RefreshCcw,
-  FileText,
   Upload,
   Trash2,
+  Sparkles,
+  Loader2,
+  Volume2,
 } from "lucide-react";
-import EnhancedAudioPlayer from "./EnhancedAudioPlayer";
-
-export interface ScriptSegment {
-  id: number;
-  type: string;
-  content: string;
-  audio?: string | null;
-  status: "draft" | "editing" | "generating" | "generated" | "failed";
-  timing?: number;
-  presentationSlide?: string;
-}
+import DOMBasedAudioPlayer from "./DOMBasedAudioPlayer";
+import { ScriptSegment } from "@/types/event";
 
 interface ScriptManagerProps {
   segments: ScriptSegment[];
   onUpdateSegment: (segmentId: number, content: string) => void;
-  onGenerateAudio: (segmentId: number) => void;
+  onGenerateAudio: (segmentId: number) => Promise<void>;
   onDeleteSegment?: (segmentId: number) => void;
   onAddSegment?: () => void;
   onRegenerateAll?: () => void;
+  onGenerateScript?: () => void; // Script generation based on event layout
+  isGeneratingScript?: boolean;
+  hasLayout?: boolean; // New prop to indicate if the event has a layout
 }
 
 export default function ScriptManager({
@@ -50,11 +46,17 @@ export default function ScriptManager({
   onDeleteSegment,
   onAddSegment,
   onRegenerateAll,
+  onGenerateScript,
+  isGeneratingScript = false,
+  hasLayout = true, // Default to true for backward compatibility
 }: ScriptManagerProps) {
   const [activeSegment, setActiveSegment] = useState<number | null>(null);
   const [editingContent, setEditingContent] = useState<string>("");
   const [selectedSegmentForPreview, setSelectedSegmentForPreview] =
     useState<ScriptSegment | null>(null);
+
+  // Sort segments by order
+  const sortedSegments = [...segments].sort((a, b) => a.order - b.order);
 
   const handleEdit = (segment: ScriptSegment) => {
     setActiveSegment(segment.id);
@@ -159,6 +161,33 @@ export default function ScriptManager({
                   Add Segment
                 </Button>
               )}
+              {onGenerateScript && (
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={onGenerateScript}
+                  disabled={isGeneratingScript || !hasLayout}
+                  title={
+                    !hasLayout
+                      ? "Create a layout first to generate a script"
+                      : "Generate script based on your event layout"
+                  }
+                  className="flex items-center gap-1"
+                >
+                  {isGeneratingScript ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generating from Layout...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      Generate from Layout
+                    </>
+                  )}
+                </Button>
+              )}
+
               {onRegenerateAll && (
                 <Button
                   size="sm"
@@ -174,21 +203,43 @@ export default function ScriptManager({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {segments.length === 0 ? (
+          {sortedSegments.length === 0 ? (
             <div className="p-8 text-center">
               <p className="text-muted-foreground">
-                No script segments yet. Start a conversation with the AI to
-                generate your script, or upload an event structure.
+                {hasLayout
+                  ? "No script segments yet. Generate a script based on your event layout."
+                  : "No script segments yet. Create an event layout first, then generate a script."}
               </p>
               <div className="mt-4 flex justify-center gap-2">
-                <Button
-                  variant="outline"
-                  className="flex items-center gap-1"
-                  onClick={onAddSegment}
-                >
-                  <FileText className="h-4 w-4" />
-                  Create from Template
-                </Button>
+                {onGenerateScript && (
+                  <Button
+                    variant="default"
+                    className="flex items-center gap-1"
+                    onClick={onGenerateScript}
+                    disabled={isGeneratingScript || !hasLayout}
+                  >
+                    {isGeneratingScript ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Generating Script...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        {hasLayout ? "Generate from Layout" : "Layout Required"}
+                      </>
+                    )}
+                  </Button>
+                )}
+                {!hasLayout && (
+                  <Button
+                    variant="outline"
+                    className="flex items-center gap-1"
+                    onClick={() => (window.location.href = "#layout")} // This should navigate to the layout tab
+                  >
+                    Create Layout First
+                  </Button>
+                )}
                 <Button variant="outline" className="flex items-center gap-1">
                   <Upload className="h-4 w-4" />
                   Import Script
@@ -196,10 +247,13 @@ export default function ScriptManager({
               </div>
             </div>
           ) : (
-            segments.map((segment) => (
+            sortedSegments.map((segment) => (
               <div key={segment.id} className="border rounded-md p-3">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="font-medium text-sm capitalize flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-muted text-xs font-medium">
+                      {segment.order}
+                    </span>
                     {segment.type}
                     {segment.timing && (
                       <span className="text-xs text-gray-500 font-normal">
@@ -208,7 +262,7 @@ export default function ScriptManager({
                     )}
                   </h3>
                   <div className="flex gap-2">
-                    {segment.audio && (
+                    {segment.audio_url && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -296,7 +350,9 @@ export default function ScriptManager({
                             size="sm"
                             variant="link"
                             className="h-5 px-1 text-xs"
-                            onClick={() => onGenerateAudio(segment.id)}
+                            onClick={async () =>
+                              await onGenerateAudio(segment.id)
+                            }
                           >
                             Generate audio
                           </Button>
@@ -312,10 +368,12 @@ export default function ScriptManager({
 
       {/* Audio Preview */}
       {selectedSegmentForPreview && (
-        <EnhancedAudioPlayer
+        <DOMBasedAudioPlayer
           title={`Preview: ${selectedSegmentForPreview.type}`}
           scriptText={selectedSegmentForPreview.content}
+          audioS3key={selectedSegmentForPreview.audio_url}
           audioUrl={selectedSegmentForPreview.audio}
+          segmentId={selectedSegmentForPreview.id} // Pass the segment ID for presigned URL
           segmentIndex={findSegmentIndex(selectedSegmentForPreview.id)}
           totalSegments={segments.length}
           onNextSegment={handleNextSegment}
