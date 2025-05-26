@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { BaseToolView, ToolCall } from "./BaseToolView";
 
 interface EventDataToolViewProps {
@@ -23,6 +24,9 @@ export function EventDataToolView({ tool }: EventDataToolViewProps) {
       <div className="mt-1 overflow-hidden text-ellipsis">
         <div className="text-2xs text-muted-foreground">Event: {eventName}</div>
       </div>
+      <Link href={`/events/${eventName}`} className="text-blue-500">
+        View Event Details
+      </Link>
     </BaseToolView>
   );
 }

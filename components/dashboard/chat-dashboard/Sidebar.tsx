@@ -33,7 +33,7 @@ export function Sidebar({
   onSelectEvent,
   onContinueEvent,
   onCreateNewEvent,
-  createEventLink,
+  createEventLink = "/create-event",
   formatDate,
   getEventProgress,
   totalEvents,

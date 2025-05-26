@@ -1,9 +1,16 @@
-import { Calendar, Users, AudioLines, Clock, LayoutTemplate } from "lucide-react";
+import {
+  Calendar,
+  Users,
+  AudioLines,
+  Clock,
+  LayoutTemplate,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CalendarDays } from "lucide-react";
 import { EventData } from "@/app/actions/event";
+import Link from "next/link";
 
 interface EventOverviewTabProps {
   selectedEvent: EventData;
@@ -80,9 +87,7 @@ export function EventOverviewTab({
                 {totalDuration > 0 && (
                   <div className="flex items-center gap-2 text-sm">
                     <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span>
-                      Duration: {formatDuration(totalDuration)}
-                    </span>
+                    <span>Duration: {formatDuration(totalDuration)}</span>
                   </div>
                 )}
               </div>
@@ -93,9 +98,7 @@ export function EventOverviewTab({
                   <div>
                     <div className="flex items-center gap-2 mb-2">
                       <LayoutTemplate className="h-4 w-4" />
-                      <h4 className="text-sm font-medium">
-                        Event Layout
-                      </h4>
+                      <h4 className="text-sm font-medium">Event Layout</h4>
                     </div>
                     <div className="space-y-2 pl-6">
                       {selectedEvent.layout.segments
@@ -105,19 +108,14 @@ export function EventOverviewTab({
                             key={idx}
                             className="text-xs text-muted-foreground flex justify-between"
                           >
-                            <span>
-                              • {segment.name || segment.type}
-                            </span>
+                            <span>• {segment.name || segment.type}</span>
                             <span>{segment.duration}s</span>
                           </div>
                         ))}
-                      {selectedEvent.layout.segments.length >
-                        3 && (
+                      {selectedEvent.layout.segments.length > 3 && (
                         <div className="text-xs text-accent">
-                          +
-                          {selectedEvent.layout.segments.length -
-                            3}{" "}
-                          more segments
+                          +{selectedEvent.layout.segments.length - 3} more
+                          segments
                         </div>
                       )}
                     </div>
@@ -127,9 +125,7 @@ export function EventOverviewTab({
               {/* Event Description */}
               {selectedEvent.description && (
                 <div className="pt-2 border-t border-border/50">
-                  <h4 className="text-sm font-medium mb-1">
-                    Description
-                  </h4>
+                  <h4 className="text-sm font-medium mb-1">Description</h4>
                   <p className="text-xs text-muted-foreground">
                     {selectedEvent.description}
                   </p>
@@ -140,17 +136,29 @@ export function EventOverviewTab({
         </Card>
 
         {/* Actions */}
-        <div className="flex gap-2">
-          <Button
-            className="flex-1"
-            variant="outline"
-            onClick={() =>
-              onContinueEvent && onContinueEvent(selectedEvent.id)
-            }
-          >
-            Open Event
-          </Button>
-          <Button className="flex-1">Generate Audio</Button>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              variant="outline"
+              onClick={() =>
+                onContinueEvent && onContinueEvent(selectedEvent.id)
+              }
+            >
+              Open Event
+            </Button>
+            <Button className="flex-1">Generate Audio</Button>
+          </div>
+
+          <Link href={`/event/${selectedEvent.id}/audio-editor`} passHref>
+            <Button
+              variant="outline"
+              className="w-full flex items-center justify-center"
+            >
+              <AudioLines className="h-4 w-4 mr-2" />
+              Audio Editor
+            </Button>
+          </Link>
         </div>
       </div>
     </div>

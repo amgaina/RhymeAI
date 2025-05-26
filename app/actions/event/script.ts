@@ -7,6 +7,7 @@ import {
   ScriptSegmentInput,
   ScriptSegmentStatus,
 } from "@/types/event";
+import { getPresignedUrl, isS3Configured } from "@/lib/s3-utils";
 
 /**
  * Generate a complete script for an event
@@ -405,5 +406,32 @@ function getConclusion(eventType: string): string {
 
     default:
       return "As we come to the end of our event, I want to thank you all for your participation and engagement. [PAUSE=400] We hope you found value in today's proceedings and will apply the insights gained in your respective fields. [BREATHE] We look forward to seeing you at future events. Thank you once again, and have a wonderful day!";
+  }
+}
+
+/**
+ * Get a presigned URL for a script segment's audio
+ */
+export async function getScriptSegmentAudioUrl(
+  segmentId: string,
+  audioKey: string | null
+): Promise<string | null> {
+  try {
+    if (!audioKey) {
+      return null;
+    }
+
+    // Check if S3 is configured
+    if (!isS3Configured()) {
+      console.warn("S3 is not configured, cannot generate presigned URL");
+      return null;
+    }
+
+    // Generate a longer-lived presigned URL (1 day = 86400 seconds)
+    const url = await getPresignedUrl(audioKey, 86400);
+    return url;
+  } catch (error) {
+    console.error("Error getting audio URL:", error);
+    return null;
   }
 }

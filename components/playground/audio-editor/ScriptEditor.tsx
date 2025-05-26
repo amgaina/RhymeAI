@@ -28,55 +28,65 @@ export default function ScriptEditor({
       <Textarea
         value={content}
         onChange={(e) => onChange(e.target.value)}
-        className="min-h-[200px] font-medium"
+        className="min-h-[200px] font-medium resize-y"
         placeholder="Enter your script here..."
       />
 
-      <div className="flex justify-between items-center">
-        <div className="text-sm text-muted-foreground">
-          {content.split(/\s+/).filter(Boolean).length} words | Approximately{" "}
-          {Math.round(content.split(/\s+/).filter(Boolean).length / 3)} seconds
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+        <div className="text-sm text-muted-foreground w-full sm:w-auto overflow-hidden text-ellipsis">
+          <span className="whitespace-nowrap">
+            {content.split(/\s+/).filter(Boolean).length} words
+          </span>
+          <span className="mx-1">|</span>
+          <span className="whitespace-nowrap">
+            Approximately{" "}
+            {Math.round(content.split(/\s+/).filter(Boolean).length / 3)}{" "}
+            seconds
+          </span>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
           {onPlay && hasAudio && (
             <Button
               variant="outline"
-              className="flex items-center gap-2"
+              className="flex items-center gap-1 whitespace-nowrap"
               onClick={onPlay}
               disabled={isGenerating}
+              size="sm"
             >
               <Play className="h-4 w-4" />
-              Play
+              <span className="text-xs sm:text-sm">Play</span>
             </Button>
           )}
 
           <Button
             variant="outline"
-            className="flex items-center gap-2"
+            className="flex items-center gap-1 whitespace-nowrap"
             onClick={onSave}
             disabled={isGenerating || !content.trim()}
+            size="sm"
           >
             {isGenerating ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Save className="h-4 w-4" />
             )}
-            Save Changes
+            <span className="text-xs sm:text-sm">Save</span>
           </Button>
 
           <Button
             variant="default"
-            className="flex items-center gap-2"
+            className="flex items-center gap-1 whitespace-nowrap"
             onClick={onGenerate}
             disabled={isGenerating || !content.trim()}
+            size="sm"
           >
             {isGenerating ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Wand2 className="h-4 w-4" />
             )}
-            Generate Audio
+            <span className="text-xs sm:text-sm">Generate</span>
           </Button>
         </div>
       </div>

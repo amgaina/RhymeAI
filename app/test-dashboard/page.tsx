@@ -95,7 +95,7 @@ export default function ChatBasedDashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-secondary">
+    <div className="min-h-screen">
       <Suspense fallback={<div>Loading...</div>}>
         <ChatDashboard
           events={events}

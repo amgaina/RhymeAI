@@ -43,14 +43,81 @@ export function useAudioPlayback() {
    * Get or create an audio element
    */
   const getAudioElement = useCallback(
-    (id: string, src?: string): HTMLAudioElement => {
+    async (id: string, src?: string): Promise<HTMLAudioElement> => {
       // Check if we already have this audio element in the registry
       if (audioRegistry.has(id)) {
         return audioRegistry.get(id)!;
       }
 
-      // Create a new audio element
-      const audio = new Audio(src);
+      // Process the URL to ensure it's a valid audio source
+      let audioSrc = src;
+
+      try {
+        // Handle different URL types
+        if (src) {
+          if (src.startsWith("blob:")) {
+            // Blob URLs can be used directly
+            audioSrc = src;
+            console.log(`Using blob URL directly: ${audioSrc}`);
+          } else if (src.startsWith("http://") || src.startsWith("https://")) {
+            // Already absolute URLs can be used directly
+            audioSrc = src;
+            console.log(`Using absolute URL directly: ${audioSrc}`);
+          } else if (src.startsWith("/")) {
+            // For relative URLs that start with '/', convert to absolute URL
+            const baseUrl =
+              typeof window !== "undefined"
+                ? `${window.location.protocol}//${window.location.host}`
+                : "";
+            audioSrc = `${baseUrl}${src}`;
+            console.log(`Converted relative URL to absolute: ${audioSrc}`);
+          } else if (src.includes("audio/event-")) {
+            // This is an S3 key - we need a presigned URL
+            try {
+              // Call our API endpoint to get a presigned URL
+              const response = await fetch(
+                `/api/audio-proxy/presign?key=${encodeURIComponent(src)}`
+              );
+
+              if (!response.ok) {
+                throw new Error(
+                  `Failed to get presigned URL: ${response.statusText}`
+                );
+              }
+
+              const data = await response.json();
+
+              if (!data.url) {
+                throw new Error("No presigned URL returned from API");
+              }
+
+              audioSrc = data.url;
+              console.log(`Generated presigned URL: ${audioSrc}`);
+            } catch (presignError) {
+              console.error("Error getting presigned URL:", presignError);
+
+              // Fallback to direct S3 URL if presigning fails
+              const s3BucketUrl =
+                process.env.NEXT_PUBLIC_S3_BUCKET_URL ||
+                "https://rhymeai-audio.s3.amazonaws.com";
+
+              audioSrc = `${s3BucketUrl}/${src}`;
+              console.log(`Fallback to direct S3 URL: ${audioSrc}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error processing audio URL:", error);
+        // Fall back to the original source if there was an error
+        audioSrc = src;
+      }
+
+      // Create a new audio element with the processed source
+      const audio = new Audio(audioSrc);
+
+      // Improve audio settings for better compatibility
+      audio.preload = "auto";
+      audio.crossOrigin = "anonymous"; // Enable CORS for S3 resources
 
       // Add event listeners
       audio.onended = () => {
@@ -60,6 +127,7 @@ export function useAudioPlayback() {
 
       audio.onerror = (e) => {
         console.error(`Audio error for ${id}:`, e);
+        console.error(`Failed audio URL: ${audioSrc}`);
         dispatch(removePlayingSegment(id.replace("direct-", "")));
       };
 

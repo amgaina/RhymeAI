@@ -1,4 +1,5 @@
 import { ToolCall as AIToolCall } from "ai";
+import Link from "next/link";
 
 // Define our custom ToolCall interface that includes all the properties we need
 export interface ToolCall {
@@ -32,6 +33,29 @@ export function BaseToolView({ tool }: BaseToolViewProps) {
       ) : (
         <div className="text-xs mt-1">{String(tool.result)}</div>
       )}
+      <div className="mt-4 flex justify-end">
+        <Link
+          href={`/event/${2}`}
+          className="inline-flex items-center gap-2 bg-[#A69B7B]/90 hover:bg-[#A69B7B] text-white text-sm font-medium px-3 py-1.5 rounded transition-all duration-200 group"
+        >
+          <span>View Event Details</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="group-hover:translate-x-0.5 transition-transform"
+          >
+            <path d="M5 12h14"></path>
+            <path d="m12 5 7 7-7 7"></path>
+          </svg>
+        </Link>
+      </div>
     </div>
   );
 }

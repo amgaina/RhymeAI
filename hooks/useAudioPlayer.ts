@@ -311,7 +311,6 @@ export default function useAudioPlayer({
 
     const handleError = (e: Event) => {
       console.error("Audio loading error:", e);
-      setUrlError("Error loading audio");
     };
 
     const handleLoadedMetadata = () => {

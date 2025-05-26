@@ -202,35 +202,6 @@ export default function Dashboard() {
             createEventLink={createEventLink}
           />
         )}
-
-        {/* AI Assistant */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 stagger-animation mt-8">
-          <Card
-            className="md:col-span-3 animate-slide-up rhyme-card"
-            style={{ animationDelay: "0.3s" }}
-          >
-            <RhymeAIChat
-              title="Event Assistant"
-              initialMessage="How can I help with your event planning today? Ask me about creating events, managing voices, or generating scripts."
-              placeholder="Ask about event planning..."
-              className="border-0 shadow-none"
-              eventContext={{
-                contextType: "general-assistant",
-                requiredFields: [],
-                additionalInfo: {
-                  purpose: "To assist with event planning and management",
-                  totalEvents: events.length,
-                  activeEvents: events.filter((e) => e.status === "ready")
-                    .length,
-                  scriptSegments: events.reduce(
-                    (sum, event) => sum + event.scriptSegments.length,
-                    0
-                  ),
-                },
-              }}
-            />
-          </Card>
-        </div>
       </main>
     </div>
   );

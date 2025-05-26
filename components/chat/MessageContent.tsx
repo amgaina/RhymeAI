@@ -28,7 +28,7 @@ export function MessageContent({ message }: MessageContentProps) {
     return (
       <>
         <MarkdownRenderer>{message.toolResponse}</MarkdownRenderer>
-        <MessageDebug message={message} />
+        {/* <MessageDebug message={message} /> */}
       </>
     );
   }
@@ -38,7 +38,7 @@ export function MessageContent({ message }: MessageContentProps) {
     return (
       <>
         <MarkdownRenderer>{cleanedContent}</MarkdownRenderer>
-        <MessageDebug message={message} />
+        {/* <MessageDebug message={message} /> */}
       </>
     );
   }
@@ -77,7 +77,7 @@ export function MessageContent({ message }: MessageContentProps) {
 
           return null;
         })}
-        <MessageDebug message={message} />
+        {/* <MessageDebug message={message} /> */}
       </>
     );
   }
@@ -86,7 +86,7 @@ export function MessageContent({ message }: MessageContentProps) {
   return (
     <>
       <span className="text-muted-foreground italic">Empty message</span>
-      <MessageDebug message={message} />
+      {/* <MessageDebug message={message} /> */}
     </>
   );
 }

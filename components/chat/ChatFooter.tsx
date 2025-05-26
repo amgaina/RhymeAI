@@ -16,6 +16,7 @@ interface ChatFooterProps {
   onContinue?: () => void;
   scriptData?: any;
   generateAudio?: () => Promise<void>;
+  disableActions?: boolean; // Add this prop to disable actions when no eventId is available
 }
 
 export function ChatFooter({
@@ -28,6 +29,7 @@ export function ChatFooter({
   onContinue,
   scriptData,
   generateAudio,
+  disableActions = false,
 }: ChatFooterProps) {
   return (
     <CardFooter className="flex justify-end border-t p-4">
@@ -38,6 +40,7 @@ export function ChatFooter({
             <Button
               onClick={handleGenerateScript}
               className="flex items-center gap-1"
+              disabled={disableActions}
             >
               <RefreshCw className="h-4 w-4" />
               Generate Script
@@ -58,6 +61,7 @@ export function ChatFooter({
           onClick={generateAudio}
           variant="outline"
           className="ml-2 flex items-center gap-1"
+          disabled={disableActions}
         >
           <MicIcon className="h-4 w-4" />
           Play Audio
@@ -66,7 +70,13 @@ export function ChatFooter({
 
       {/* Continue button for navigation flows */}
       {onContinue && (
-        <Button onClick={onContinue} className="ml-2 flex items-center gap-1">
+        <Button
+          onClick={onContinue}
+          className="ml-2 flex items-center gap-1"
+          disabled={
+            disableActions && eventContext?.contextType === "event-creation"
+          }
+        >
           Continue
           <ArrowRightIcon className="h-4 w-4" />
         </Button>

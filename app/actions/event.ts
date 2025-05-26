@@ -1144,6 +1144,25 @@ export async function generateEventScript(eventId: string) {
   }
 }
 
+function updateEventChatId(
+  eventId: string,
+  chatId: string
+): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  return db.events
+    .update({
+      where: { event_id: parseInt(eventId) },
+      data: { chat_id: chatId },
+    })
+    .then(() => ({ success: true }))
+    .catch((error) => {
+      console.error("Error updating event chat ID:", error);
+      return { success: false, error: "Failed to update event chat ID" };
+    });
+}
+
 // Helper functions to generate script content based on event type
 function getIntroduction(eventType: string): string {
   switch (eventType) {

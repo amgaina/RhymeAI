@@ -3,8 +3,8 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
-import { EventLayout, LayoutSegment } from "@/types/layout";
-import { ScriptSegment } from "@/types/event";
+import { google } from "@ai-sdk/google";
+import { generateText } from "ai";
 
 /**
  * Generate script from layout for an event
@@ -26,7 +26,7 @@ export async function generateScriptFromLayout(eventId: string) {
 
     // Get the event and its layout
     const event = await db.events.findUnique({
-      where: { 
+      where: {
         event_id: eventIdNum,
         user_id: session.userId, // Ensure the user can only access their own events
       },
@@ -53,71 +53,138 @@ export async function generateScriptFromLayout(eventId: string) {
     // Generate script segments based on layout segments
     const scriptSegments = [];
 
-    for (const layoutSegment of event.layout.segments) {
-      let scriptContent = "";
+    // Check if event settings contain a chat_id
+    let chatContext = "";
+    if (event.event_settings && typeof event.event_settings === "object") {
+      const settings = event.event_settings as Record<string, any>;
+      if (settings.linked_chat_id) {
+        // Use the chat ID to fetch chat history and use as context
+        try {
+          const chatMessages = await db.chat_messages.findMany({
+            where: {
+              event_id: eventIdNum,
+            },
+            orderBy: {
+              created_at: "asc",
+            },
+          });
 
-      // Generate script content based on segment type
-      switch (layoutSegment.type) {
-        case "introduction":
-          scriptContent = `Ladies and gentlemen, welcome to ${
-            event.title
-          }! I'm your AI host for today's ${event.event_type.toLowerCase()}. We're excited to have you all here for what promises to be an engaging and informative event. ${
-            event.description
-              ? `Today, we'll be focusing on ${event.description}.`
-              : ""
-          } Let's get started!`;
-          break;
-
-        case "agenda":
-          scriptContent = `Let me walk you through today's agenda. We have a packed schedule with valuable content planned for you. ${event.layout.segments.length} segments are planned, totaling approximately ${event.layout.total_duration} minutes. We'll have breaks in between to allow you to network and refresh.`;
-          break;
-
-        case "keynote":
-          scriptContent = `It's my pleasure to introduce our keynote speaker for today. They bring a wealth of experience and insights that I'm sure you'll find valuable. Please join me in welcoming our distinguished speaker to the stage!`;
-          break;
-
-        case "q_and_a":
-          scriptContent = `We'll now open the floor for questions. If you have a question, please raise your hand or use the Q&A feature in the app. We'll try to address as many questions as possible in the time we have available.`;
-          break;
-
-        case "break":
-          scriptContent = `We'll now take a short break for ${layoutSegment.duration} minutes. Please feel free to stretch, grab a refreshment, and network with fellow attendees. We'll resume promptly at [INSERT TIME].`;
-          break;
-
-        case "conclusion":
-          scriptContent = `As we come to the end of our ${event.event_type.toLowerCase()}, I want to thank you all for your active participation and engagement. It's been a pleasure hosting you today. We hope you found the content valuable and look forward to seeing you at future events!`;
-          break;
-
-        case "presentation":
-          scriptContent = `Next up, we have a presentation on ${layoutSegment.name}. This segment will cover ${layoutSegment.description} and will last approximately ${layoutSegment.duration} minutes. Please give your full attention to our presenter.`;
-          break;
-
-        case "discussion":
-          scriptContent = `Now, let's engage in a discussion about ${layoutSegment.name}. We encourage everyone to share their thoughts and perspectives. Remember, there are no wrong answers, and all viewpoints are valuable to our collective learning.`;
-          break;
-
-        case "demo":
-          scriptContent = `We're now moving to a demonstration of ${layoutSegment.name}. This will give you a practical understanding of ${layoutSegment.description}. Please observe carefully, and we'll have time for questions afterward.`;
-          break;
-
-        default:
-          scriptContent = `Next up is our ${layoutSegment.name} segment. ${layoutSegment.description} This will last approximately ${layoutSegment.duration} minutes.`;
+          if (chatMessages.length > 0) {
+            chatContext = chatMessages
+              .map((msg) => `${msg.role}: ${msg.content}`)
+              .join("\n");
+          }
+        } catch (error) {
+          console.warn("Failed to load chat context:", error);
+        }
       }
+    }
 
-      // Create script segment in database
-      const scriptSegment = await db.script_segments.create({
-        data: {
-          event_id: event.event_id,
-          layout_segment_id: layoutSegment.id,
-          segment_type: layoutSegment.type,
-          content: scriptContent,
-          timing: layoutSegment.duration * 60, // Convert minutes to seconds
-          order: layoutSegment.order,
-          status: "draft",
-        },
-      });
+    // Extract voice settings for consistent tone
+    const voiceSettings =
+      typeof event.voice_settings === "string"
+        ? JSON.parse(event.voice_settings as string)
+        : event.voice_settings || {};
 
-      scriptSegments.push(scriptSegment);
+    // Configure the AI model - using the same model as in route.ts
+    const model = google("gemini-2.0-flash-exp", {
+      maxOutputTokens: 1500,
+      temperature: 0.7,
+    });
+
+    for (const layoutSegment of event.layout.segments) {
+      // Prepare the context for AI generation
+      const systemPrompt = `You are an AI event host writing a script for a segment of an event.
+Your goal is to create engaging, professional content appropriate for the context.`;
+
+      const userPrompt = `
+Write a script for segment "${layoutSegment.name}" of type "${
+        layoutSegment.type
+      }"
+for a ${event.event_type} titled "${event.title}".
+
+Event details:
+- Title: ${event.title}
+- Type: ${event.event_type}
+- Description: ${event.description || "Not specified"}
+- Date: ${
+        event.event_date
+          ? new Date(event.event_date).toLocaleDateString()
+          : "Not specified"
+      }
+- Location: ${event.location || "Not specified"}
+- Expected attendees: ${event.expected_attendees || "Not specified"}
+
+Segment details:
+- Name: ${layoutSegment.name}
+- Type: ${layoutSegment.type}
+- Description: ${layoutSegment.description}
+- Duration: ${layoutSegment.duration} minutes
+- Order in event: ${layoutSegment.order} of ${event.layout.segments.length}
+
+Voice characteristics:
+- Gender: ${voiceSettings.gender || "neutral"}
+- Style: ${voiceSettings.voiceType || "professional"}
+- Accent: ${voiceSettings.accent || "standard"}
+
+${chatContext ? "Context from event planning chat:\n" + chatContext : ""}
+
+Write a natural, conversational script for this segment that would be spoken by an AI host.
+The script should be appropriate for the segment type and fit within the allocated duration (${
+        layoutSegment.duration
+      } minutes).
+Make it sound natural and engaging. Keep it under 300 words.
+`;
+
+      try {
+        // Call AI to generate the script content using the ai SDK
+        const { text: generatedText } = await generateText({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+        });
+
+        // Use the properly destructured text content
+        const scriptContent =
+          generatedText?.trim() ||
+          `Next up is our ${layoutSegment.name} segment. ${layoutSegment.description} This will last approximately ${layoutSegment.duration} minutes.`;
+
+        // Create script segment in database
+        const scriptSegment = await db.script_segments.create({
+          data: {
+            event_id: event.event_id,
+            layout_segment_id: layoutSegment.id,
+            segment_type: layoutSegment.type,
+            content: scriptContent,
+            timing: layoutSegment.duration * 60, // Convert minutes to seconds
+            order: layoutSegment.order,
+            status: "draft",
+          },
+        });
+
+        scriptSegments.push(scriptSegment);
+      } catch (aiError) {
+        console.error("Error generating AI script content:", aiError);
+
+        // Use fallback content if AI generation fails
+        const fallbackContent = `Next up is our ${layoutSegment.name} segment. ${layoutSegment.description} This will last approximately ${layoutSegment.duration} minutes.`;
+
+        const scriptSegment = await db.script_segments.create({
+          data: {
+            event_id: event.event_id,
+            layout_segment_id: layoutSegment.id,
+            segment_type: layoutSegment.type,
+            content: fallbackContent,
+            timing: layoutSegment.duration * 60,
+            order: layoutSegment.order,
+            status: "draft",
+          },
+        });
+
+        scriptSegments.push(scriptSegment);
+      }
     }
 
     // Update the event status
@@ -134,16 +201,17 @@ export async function generateScriptFromLayout(eventId: string) {
     revalidatePath(`/event/${eventId}`);
     revalidatePath(`/event/${eventId}/script`);
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       segments: scriptSegments,
-      message: `Generated ${scriptSegments.length} script segments successfully`
+      message: `Generated ${scriptSegments.length} script segments successfully`,
     };
   } catch (error) {
     console.error("Error generating script:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to generate script",
+      error:
+        error instanceof Error ? error.message : "Failed to generate script",
     };
   }
 }
@@ -203,7 +271,10 @@ export async function updateScriptSegment(segmentId: string, data: any) {
     console.error("Error updating script segment:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to update script segment",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to update script segment",
     };
   }
 }

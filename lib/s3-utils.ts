@@ -7,6 +7,8 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  CopyObjectCommand,
+  DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -37,6 +39,68 @@ const s3Client = new S3Client({
 const BUCKET_NAME = process.env.S3_BUCKET_NAME || "rhymeai-audio";
 
 /**
+ * Check if there's an internet connection by making a simple fetch request
+ * @returns Promise<boolean> - True if internet is available, false otherwise
+ */
+async function checkInternetConnection(): Promise<boolean> {
+  try {
+    // Try to fetch a small resource with a short timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    await fetch("https://www.google.com/favicon.ico", {
+      method: "HEAD",
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    return true;
+  } catch (error) {
+    console.warn("Internet connection check failed:", error);
+    return false;
+  }
+}
+
+/**
+ * Parse and enhance error messages, especially for network-related issues
+ * @param error The caught error
+ * @returns A user-friendly error message
+ */
+function parseS3Error(error: unknown): string {
+  const errorString = String(error);
+
+  // Check for common network-related errors
+  if (
+    errorString.includes("ENOTFOUND") ||
+    errorString.includes("ETIMEDOUT") ||
+    errorString.includes("ECONNREFUSED") ||
+    errorString.includes("ECONNRESET") ||
+    errorString.includes("network error") ||
+    errorString.includes("Failed to fetch") ||
+    errorString.includes("NetworkError") ||
+    error instanceof TypeError
+  ) {
+    return "It appears you're not connected to the internet, please check your network connection and try again.";
+  }
+
+  // Handle credential errors
+  if (
+    errorString.includes("Credential") ||
+    errorString.includes("AccessDenied")
+  ) {
+    return "AWS authentication failed. Please check your credentials and permissions.";
+  }
+
+  // Handle resource not found
+  if (errorString.includes("NotFound") || errorString.includes("404")) {
+    return "The requested resource was not found in S3.";
+  }
+
+  // Default error message with details if available
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
  * Upload a buffer to S3
  * @param buffer The buffer to upload
  * @param key The S3 key (file path)
@@ -49,6 +113,14 @@ export async function uploadToS3(
   contentType: string = "audio/mpeg"
 ): Promise<string> {
   try {
+    // Check internet connection first
+    const isConnected = await checkInternetConnection();
+    if (!isConnected) {
+      throw new Error(
+        "It appears you're not connected to the internet, please check your network connection and try again."
+      );
+    }
+
     // Validate the buffer to ensure it's a valid audio file
     if (buffer.length < 100) {
       throw new Error("Invalid audio buffer: too small");
@@ -81,11 +153,8 @@ export async function uploadToS3(
     return await getPresignedUrl(key, fiveDaysInSeconds);
   } catch (error) {
     console.error("Error uploading to S3:", error);
-    throw new Error(
-      `Failed to upload file to S3: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
+    const errorMessage = parseS3Error(error);
+    throw new Error(`Failed to upload file to S3: ${errorMessage}`);
   }
 }
 
@@ -100,6 +169,14 @@ export async function getPresignedUrl(
   expiresIn: number = 3600
 ): Promise<string> {
   try {
+    // Check internet connection first
+    const isConnected = await checkInternetConnection();
+    if (!isConnected) {
+      throw new Error(
+        "It appears you're not connected to the internet, please check your network connection and try again."
+      );
+    }
+
     console.log(
       `Generating presigned URL for key: ${key} with expiration: ${expiresIn} seconds`
     );
@@ -187,33 +264,51 @@ export async function getPresignedUrl(
       return url;
     } catch (signedUrlError) {
       console.error("Error in getSignedUrl:", signedUrlError);
-
-      // More detailed error for credential issues
-      const errorString = String(signedUrlError);
-      if (errorString.includes("Credential")) {
-        console.error(
-          "AWS credential error detected. Check your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."
-        );
-        throw new Error(
-          "AWS credential error. Please check your AWS configuration."
-        );
-      }
-
-      throw new Error(
-        `Failed to generate signed URL: ${
-          signedUrlError instanceof Error
-            ? signedUrlError.message
-            : String(signedUrlError)
-        }`
-      );
+      const errorMessage = parseS3Error(signedUrlError);
+      throw new Error(`Failed to generate signed URL: ${errorMessage}`);
     }
   } catch (error) {
     console.error("Error generating presigned URL:", error);
-    throw new Error(
-      `Failed to generate presigned URL: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
+    const errorMessage = parseS3Error(error);
+    throw new Error(`Failed to generate presigned URL: ${errorMessage}`);
+  }
+}
+
+/**
+ * Rename an object in S3
+ * @param oldKey The old S3 key
+ * @param newKey The new S3 key
+ * @returns True if successful
+ */
+export async function renameS3Object(
+  oldKey: string,
+  newKey: string
+): Promise<boolean> {
+  try {
+    // Check internet connection first
+    const isConnected = await checkInternetConnection();
+    if (!isConnected) {
+      console.error(
+        "No internet connection detected. Cannot rename S3 object."
+      );
+      return false;
+    }
+
+    const copyCommand = new CopyObjectCommand({
+      Bucket: BUCKET_NAME,
+      CopySource: `${BUCKET_NAME}/${oldKey}`,
+      Key: newKey,
+    });
+    await s3Client.send(copyCommand);
+    const deleteCommand = new DeleteObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: oldKey,
+    });
+    await s3Client.send(deleteCommand);
+    return true;
+  } catch (error) {
+    console.error("Error renaming S3 object:", error);
+    return false;
   }
 }
 
@@ -276,6 +371,17 @@ export function isS3Configured(): boolean {
  */
 export async function checkS3ObjectExists(key: string): Promise<boolean> {
   try {
+    // Check internet connection first
+    const isConnected = await checkInternetConnection();
+    if (!isConnected) {
+      console.warn(
+        "No internet connection detected. Cannot verify if S3 object exists."
+      );
+      throw new Error(
+        "It appears you're not connected to the internet, please check your network connection and try again."
+      );
+    }
+
     console.log(`Checking if object exists in S3: ${key}`);
 
     // Create the HeadObjectCommand
@@ -298,6 +404,23 @@ export async function checkS3ObjectExists(key: string): Promise<boolean> {
     ) {
       console.log(`Object does not exist in S3: ${key}`);
       return false;
+    }
+
+    // If it's a network error, provide clear message
+    const errorString = String(error);
+    if (
+      errorString.includes("ENOTFOUND") ||
+      errorString.includes("ETIMEDOUT") ||
+      errorString.includes("ECONNREFUSED") ||
+      errorString.includes("ECONNRESET") ||
+      errorString.includes("network error")
+    ) {
+      console.error(
+        `Network error when checking if object exists in S3: ${key}`
+      );
+      throw new Error(
+        "It appears you're not connected to the internet, please check your network connection and try again."
+      );
     }
 
     // For other errors, log and rethrow

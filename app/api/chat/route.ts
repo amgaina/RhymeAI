@@ -1,5 +1,10 @@
 import { google } from "@ai-sdk/google";
-import { streamText, Message } from "ai";
+import {
+  streamText,
+  Message,
+  appendClientMessage,
+  appendResponseMessages,
+} from "ai";
 import { v4 as uuidv4 } from "uuid";
 import {
   eventTools,
@@ -8,6 +13,8 @@ import {
   presentationTools,
 } from "./tools";
 import { generateSystemPrompt } from "./prompts";
+import { loadChatFromS3, saveChatToS3 } from "@/lib/chat-persistence";
+import { saveChat } from "./tools/chats-store";
 
 /**
  * Transforms incoming messages to include proper id properties
@@ -25,13 +32,17 @@ function transformMessages(incomingMessages: any[]): Message[] {
 function createSystemMessage(
   contextType: string,
   requiredFields: any,
+  chatId: string,
   additionalInfo?: any
 ): Message {
   const systemPrompt = generateSystemPrompt(
     contextType,
     requiredFields,
-    additionalInfo
+    additionalInfo,
+    chatId
   );
+
+  console.log("Generated system prompt:", chatId, systemPrompt);
 
   return {
     id: "system",
@@ -44,30 +55,30 @@ function createSystemMessage(
 export async function POST(req: Request) {
   try {
     // Get messages and eventContext from request body
-    const { messages: incomingMessages, eventContext } = await req.json();
+    const {
+      messages: incomingMessages,
+      eventContext = {},
+      id: chatId,
+    } = await req.json();
 
     // Transform messages to include an 'id' property
     const messages = transformMessages(incomingMessages);
 
+    // Set default values for eventContext if it's undefined or missing properties
+    const contextType = eventContext.contextType || "general-assistant";
+    const requiredFields = eventContext.requiredFields || [];
+    const additionalInfo = eventContext.additionalInfo || {};
+
     // Generate a context-aware system prompt with additionalInfo
     const systemMessage = createSystemMessage(
-      eventContext.contextType,
-      eventContext.requiredFields,
-      eventContext.additionalInfo // Pass the additionalInfo to the prompt generator
+      contextType,
+      requiredFields,
+      chatId,
+      additionalInfo // Pass the additionalInfo to the prompt generator,
     );
 
     // Combine system message with user messages
     const messagesWithSystem = [systemMessage, ...messages];
-
-    // Check if we're using the general assistant context type
-    if (eventContext.contextType === "general-assistant") {
-      console.log("Using general assistant context - no event ID required");
-    } else {
-      console.log(
-        "Event ID from context:",
-        eventContext?.additionalInfo?.eventId || "No event ID"
-      );
-    }
 
     // Optimized Gemini model configuration for script generation
     const result = streamText({
@@ -106,9 +117,28 @@ export async function POST(req: Request) {
         generate_presentation: presentationTools.generatePresentationTool,
       },
       messages: messagesWithSystem,
+      async onFinish({ response }) {
+        if (!chatId) {
+          console.warn("No chat ID provided for persistence");
+          return;
+        }
+
+        console.log(`Saving chat with ID: ${chatId}`);
+        await saveChat({
+          id: chatId,
+          messages: appendResponseMessages({
+            messages,
+            responseMessages: response.messages,
+          }),
+        });
+      },
       temperature: 0.5, // Lower temperature for more focused responses
       maxTokens: 1500, // Increased token limit for more comprehensive scripts
     });
+
+    // Save chat messages to S3
+    // Use the ID passed from the frontend, fallback to eventId from context, or generate new one if needed
+    await saveChatToS3(chatId, messagesWithSystem);
 
     // Include custom metadata for client-side synchronization
     return result.toDataStreamResponse();
@@ -141,5 +171,32 @@ export async function POST(req: Request) {
         },
       }
     );
+  }
+}
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const chatId = searchParams.get("chatId");
+
+  if (!chatId) {
+    return new Response("Chat ID is required", { status: 400 });
+  }
+
+  try {
+    const messages = await loadChatFromS3(chatId);
+    return new Response(JSON.stringify(messages), { status: 200 });
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
+    // If the error is "Not Found", return an empty array instead of an error
+    if (errorMessage.includes("Not Found")) {
+      console.log(`Chat with ID ${chatId} not found, returning empty array`);
+      return new Response(JSON.stringify([]), { status: 200 });
+    }
+
+    return new Response(`Failed to load chat: ${errorMessage}`, {
+      status: 500,
+    });
   }
 }

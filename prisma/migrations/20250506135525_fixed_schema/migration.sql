@@ -3,7 +3,7 @@ CREATE TABLE "events" (
     "event_id" SERIAL NOT NULL,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ(6),
-    "user_id" TEXT NOT NULL DEFAULT (auth.jwt() ->> 'sub'::text),
+    "user_id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "description" TEXT,
     "event_type" TEXT NOT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE "events" (
 CREATE TABLE "users" (
     "id" SERIAL NOT NULL,
     "name" TEXT NOT NULL,
-    "user_id" TEXT NOT NULL DEFAULT (auth.jwt() ->> 'sub'::text),
+    "user_id" TEXT NOT NULL,
     "email" TEXT,
     "avatar_url" TEXT,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -95,7 +95,7 @@ CREATE TABLE "script_segments" (
 -- CreateTable
 CREATE TABLE "user_analytics" (
     "id" SERIAL NOT NULL,
-    "user_id" TEXT NOT NULL DEFAULT (auth.jwt() ->> 'sub'::text),
+    "user_id" TEXT NOT NULL,
     "event_id" INTEGER NOT NULL,
     "accessed_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "action" TEXT NOT NULL,
@@ -108,7 +108,7 @@ CREATE TABLE "user_analytics" (
 CREATE TABLE "chat_messages" (
     "id" SERIAL NOT NULL,
     "event_id" INTEGER NOT NULL,
-    "user_id" TEXT NOT NULL DEFAULT (auth.jwt() ->> 'sub'::text),
+    "user_id" TEXT NOT NULL,
     "role" TEXT NOT NULL,
     "content" TEXT NOT NULL,
     "message_id" TEXT NOT NULL,

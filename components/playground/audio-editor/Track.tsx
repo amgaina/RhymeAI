@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -618,16 +616,35 @@ export default function Track({
           );
         })}
 
-        {/* Empty state - minimal text */}
-        {!hasAudio && track.segments.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-[9px] text-muted-foreground">
+        {/* Empty state - making it more visible */}
+        {track.segments.length === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-[9px] text-muted-foreground p-1 bg-background/40 rounded mb-1">
               {track.type === "emcee"
                 ? "Add script"
                 : track.type === "background"
                 ? "Add music"
                 : "Add effects"}
             </span>
+            {/* Small add button directly below the text for empty state */}
+            {!track.locked && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-5 text-[9px] py-0 px-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (typeof onAddSegment === "function") {
+                    onAddSegment();
+                  } else {
+                    console.error("onAddSegment is not a function");
+                  }
+                }}
+              >
+                <PlusCircle className="h-2.5 w-2.5 mr-1" />
+                Add
+              </Button>
+            )}
           </div>
         )}
 
@@ -636,10 +653,14 @@ export default function Track({
           <Button
             variant="ghost"
             size="sm"
-            className="absolute bottom-0.5 right-0.5 h-4 text-[9px] p-0 opacity-40 hover:opacity-100 bg-background/40"
+            className="absolute bottom-0.5 right-0.5 h-4 text-[9px] p-0 opacity-40 hover:opacity-100 bg-background/40 z-10"
             onClick={(e) => {
               e.stopPropagation();
-              onAddSegment();
+              if (typeof onAddSegment === "function") {
+                onAddSegment();
+              } else {
+                console.error("onAddSegment is not a function");
+              }
             }}
           >
             <PlusCircle className="h-2.5 w-2.5 mr-0.5" />
@@ -653,7 +674,7 @@ export default function Track({
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {selectedSegment?.content || "Segment Details"}
+              {selectedSegment?.content.slice(0, 20) || "Segment Info"}
             </AlertDialogTitle>
           </AlertDialogHeader>
 

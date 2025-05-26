@@ -35,6 +35,8 @@ import LayoutManager from "@/components/dashboard/LayoutManager";
 import SimpleAudioPlayer from "@/components/dashboard/SimpleAudioPlayer";
 import { useDevices } from "@/hooks/useDevices";
 import { RhymeAIChat } from "@/components/RhymeAIChat";
+import { RealtimeAnalysis } from "@/components/dashboard/RealtimeAnalysis";
+import { PostEventReport } from "@/components/dashboard/PostEventReport";
 
 export default function EventDetailPage() {
   const { eventId } = useParams();
@@ -860,6 +862,13 @@ export default function EventDetailPage() {
               >
                 Settings
               </TabsTrigger>
+
+              <TabsTrigger
+                value="postevent"
+                className="data-[state=active]:bg-background"
+              >
+                Post Event Report
+              </TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -989,6 +998,9 @@ export default function EventDetailPage() {
                   onAddDevice={() => console.log("Adding new device")}
                 />
               </div>
+              <div className="">
+                <RealtimeAnalysis />
+              </div>
             </TabsContent>
 
             {/* Settings Tab */}
@@ -996,6 +1008,61 @@ export default function EventDetailPage() {
               <EventSettings
                 event={event}
                 onSaveSettings={handleSaveSettings}
+              />
+            </TabsContent>
+
+            <TabsContent value="postevent" className="space-y-4">
+              <PostEventReport
+                eventId="ev-12345"
+                eventName="Product Launch Webinar"
+                eventDate={new Date("2025-04-30")}
+                duration={60}
+                attendeeCount={250}
+                averageEngagement={82}
+                engagementTrend="up"
+                emotionData={{
+                  happy: 65,
+                  neutral: 20,
+                  surprised: 10,
+                  angry: 5,
+                }}
+                timeSeriesData={[
+                  // Time series data for the charts
+                  {
+                    time: "00:00",
+                    engagement: 70,
+                    happy: 60,
+                    neutral: 30,
+                    surprised: 5,
+                    angry: 5,
+                  },
+                  {
+                    time: "05:00",
+                    engagement: 75,
+                    happy: 65,
+                    neutral: 25,
+                    surprised: 8,
+                    angry: 2,
+                  },
+                  // ...more data points
+                ]}
+                keyMoments={[
+                  {
+                    id: 1,
+                    timestamp: "15:30",
+                    title: "Product Demo",
+                    description:
+                      "Audience showed high engagement during live demonstration",
+                    emotionChange: "Happy +20%",
+                    engagementLevel: 92,
+                  },
+                  // ...more key moments
+                ]}
+                audienceSegmentation={[
+                  { name: "First-time", value: 45, color: "#4CAF50" },
+                  { name: "Returning", value: 30, color: "#2196F3" },
+                  { name: "Premium", value: 25, color: "#9C27B0" },
+                ]}
               />
             </TabsContent>
           </Tabs>

@@ -326,7 +326,14 @@ export default function ScriptManager({
                   </div>
                 ) : (
                   <>
-                    <p className="text-sm text-gray-700">{segment.content}</p>
+                    <div className="relative">
+                      <p className="text-sm text-gray-700">{segment.content}</p>
+                      {/\[(first name|time|.*?)\]/i.test(segment.content) && (
+                        <span className="absolute top-0 right-0 bg-amber-100 text-amber-800 text-xs font-medium px-2 py-0.5 rounded-md">
+                          Placeholders need attention
+                        </span>
+                      )}
+                    </div>
 
                     <div className="mt-2 flex items-center gap-2 text-xs">
                       {getStatusIcon(segment.status)}

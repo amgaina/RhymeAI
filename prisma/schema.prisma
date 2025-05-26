@@ -12,7 +12,8 @@ model events {
   event_id         Int       @id @default(autoincrement())
   created_at       DateTime  @default(now()) @db.Timestamptz(6)
   updated_at       DateTime? @updatedAt @db.Timestamptz(6)
-  user_id          String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+  user_id          String
+  chat_id          String?   // Adding field to store the associated chat ID
 
   // Basic event information
   title            String
@@ -58,6 +59,8 @@ model events {
   play_count       Int       @default(0)
   last_played      DateTime? @db.Timestamptz(6)
 
+  is_active       Boolean   @default(false) // Flag to indicate if the event is active
+
   @@index([user_id])
   @@index([event_date])
   @@index([status])
@@ -67,7 +70,7 @@ model events {
 model users {
   id         Int      @id @default(autoincrement())
   name       String
-  user_id    String   @unique @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+  user_id    String   @unique
   email      String?  @unique
   avatar_url String?
   created_at DateTime @default(now()) @db.Timestamptz(6)
@@ -150,7 +153,7 @@ model script_segments {
 // Additional utility model for managing user preferences and analytics
 model user_analytics {
   id          Int       @id @default(autoincrement())
-  user_id     String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+  user_id     String
   event_id    Int
   accessed_at DateTime  @default(now()) @db.Timestamptz(6)
   action      String    // view, edit, play, share, etc.
@@ -169,7 +172,7 @@ model user_analytics {
 model chat_messages {
   id            Int       @id @default(autoincrement())
   event_id      Int
-  user_id       String    @default(dbgenerated("(auth.jwt() ->> 'sub'::text)"))
+  user_id       String
   role          String    // "user" or "assistant"
   content       String    @db.Text
   message_id    String    // Unique ID from the chat system

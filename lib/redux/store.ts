@@ -1,23 +1,32 @@
 import { configureStore } from "@reduxjs/toolkit";
-import { audioReducer, projectReducer, AudioPlaybackState } from "./slices";
-import { ProjectState } from "./slices/projectSlice";
-// Define the root state interface explicitly
-export interface RootState {
-  audio: AudioPlaybackState;
-  project: ProjectState;
-}
+import chatReducer from "./slices/chatSlice";
+import audioReducer from "./slices/audioSlice";
+import projectReducer from "./slices/projectSlice";
 
-// Configure the store with properly typed reducers
 export const store = configureStore({
   reducer: {
+    chat: chatReducer,
     audio: audioReducer,
     project: projectReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
-      serializableCheck: false, // Allow non-serializable values like Audio objects
+      serializableCheck: {
+        // Ignore non-serializable values in these paths
+        ignoredActions: [
+          "audio/setAudioManager",
+          "audio/registerAudioElement",
+          "audio/addPlayingSegment",
+          "audio/removePlayingSegment",
+          "audio/setPlaying",
+          "audio/setAudioInitialized",
+        ],
+        ignoredPaths: ["audio.audioManager"],
+      },
     }),
 });
 
-// Export the AppDispatch type
+export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
+
+export default store;

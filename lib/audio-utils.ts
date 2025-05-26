@@ -579,16 +579,176 @@ export function getAudioFileDuration(url: string): Promise<number> {
 
 /**
  * Create a blob URL from a File object
+ * This function handles audio file import by creating a Blob URL
  */
 export function createAudioFileUrl(file: File): string {
-  return URL.createObjectURL(file);
+  try {
+    // Validate that the file is an audio file
+    if (!file.type.startsWith("audio/")) {
+      console.warn(`File might not be audio: ${file.name} (${file.type})`);
+      // Continue anyway since some valid audio files might have incorrect MIME types
+    }
+
+    // Make sure the file has content
+    if (file.size === 0) {
+      throw new Error("File is empty");
+    }
+
+    // Create and return the blob URL
+    const blobUrl = URL.createObjectURL(file);
+    console.log(`Created blob URL for file: ${file.name} (${blobUrl})`);
+
+    // Validate that the blob URL was created successfully
+    if (!blobUrl || blobUrl === "") {
+      throw new Error("Failed to create blob URL");
+    }
+
+    return blobUrl;
+  } catch (error) {
+    console.error(`Error creating audio file URL for ${file.name}:`, error);
+    throw new Error(
+      `Failed to create audio URL: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
 }
 
 /**
  * Revoke a blob URL to prevent memory leaks
  */
 export function revokeAudioFileUrl(url: string): void {
-  if (url.startsWith("blob:")) {
-    URL.revokeObjectURL(url);
+  try {
+    if (url && url.startsWith("blob:")) {
+      URL.revokeObjectURL(url);
+      console.log("Revoked blob URL:", url);
+    }
+  } catch (error) {
+    console.error("Error revoking audio URL:", error);
+  }
+}
+
+/**
+ * Normalize audio file for better cross-browser compatibility
+ * This helps ensure audio files work consistently across browsers by performing validation
+ * and potentially converting problematic formats
+ */
+export async function normalizeAudioFile(
+  file: File
+): Promise<{ url: string; duration?: number; metadata?: Record<string, any> }> {
+  try {
+    // Validate the file is an audio file
+    const isAudioMIME = file.type.startsWith("audio/");
+    const hasAudioExtension = /\.(mp3|wav|m4a|ogg|aac|flac)$/i.test(file.name);
+
+    if (!isAudioMIME && !hasAudioExtension) {
+      throw new Error(
+        `File "${file.name}" does not appear to be a valid audio file`
+      );
+    }
+
+    // Create a blob URL for the file
+    const fileUrl = createAudioFileUrl(file);
+
+    // Try to get audio duration
+    let duration: number | undefined;
+    try {
+      duration = await getAudioFileDuration(fileUrl);
+      console.log(`Detected duration for ${file.name}: ${duration}s`);
+    } catch (error) {
+      console.warn(
+        `Could not detect duration for ${file.name}. Using metadata fallback.`,
+        error
+      );
+
+      // For some formats like WAV files on Safari, we may need to use the File API
+      // to extract duration directly from file metadata
+      // This is a placeholder for future implementation
+    }
+
+    return {
+      url: fileUrl,
+      duration,
+      metadata: {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+      },
+    };
+  } catch (error) {
+    console.error(`Error normalizing audio file ${file.name}:`, error);
+    throw new Error(
+      `Failed to process audio file ${file.name}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
+/**
+ * Convert AudioBuffer to WAV format
+ * This is a helper function for normalizeAudioFile
+ */
+function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const format = 1; // PCM
+  const bitDepth = 16;
+
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+
+  // Create the buffer for the WAV file
+  const dataLength = buffer.length * numChannels * bytesPerSample;
+  const bufferLength = 44 + dataLength;
+  const arrayBuffer = new ArrayBuffer(bufferLength);
+  const view = new DataView(arrayBuffer);
+
+  // Write the WAV header
+  // "RIFF" chunk descriptor
+  writeString(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataLength, true);
+  writeString(view, 8, "WAVE");
+
+  // "fmt " sub-chunk
+  writeString(view, 12, "fmt ");
+  view.setUint32(16, 16, true); // Subchunk size
+  view.setUint16(20, format, true); // Audio format (PCM)
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true); // Byte rate
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+
+  // "data" sub-chunk
+  writeString(view, 36, "data");
+  view.setUint32(40, dataLength, true);
+
+  // Write the PCM samples
+  const offset = 44;
+  const channelData = [];
+
+  // Extract data from each channel
+  for (let ch = 0; ch < numChannels; ch++) {
+    channelData.push(buffer.getChannelData(ch));
+  }
+
+  let pos = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, channelData[ch][i]));
+      const sampleInt = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      view.setInt16(offset + pos, sampleInt, true);
+      pos += bytesPerSample;
+    }
+  }
+
+  return arrayBuffer;
+}
+
+// Helper to write strings to a DataView
+function writeString(view: DataView, offset: number, string: string): void {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
   }
 }

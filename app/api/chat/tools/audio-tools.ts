@@ -72,7 +72,7 @@ export const generateAudioTool = tool({
  * Tool for batch generating audio for multiple script segments
  */
 export const batchGenerateAudioTool = tool({
-  description: "Generate audio for multiple script segments at once",
+  description: "Generate the audio or TTS-ready from the script segments",
   parameters: z.object({
     eventId: z.string(),
     segmentIds: z.array(z.string()),
@@ -131,7 +131,7 @@ export const batchGenerateAudioTool = tool({
  */
 
 export const listAudioFilesTool = tool({
-  description: "List all audio files for a specific event",
+  description: "List all audio files for a specific event in very detailed way",
   parameters: z.object({
     eventId: z.string(),
   }),
