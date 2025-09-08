@@ -50,3 +50,5 @@
 - Multi-device synchronization
 - AI-powered event flow optimization
 - Real-time translation services
+
+View Live: [[View the live site here]](https://rhyme-ai.vercel.app/)
