@@ -1,9 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Slider } from "@/components/ui/slider";
 import {
   Play,
   Pause,
@@ -13,8 +14,11 @@ import {
   AlertCircle,
   Presentation,
   CheckCircle,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
-import { ScriptSegment } from "./ScriptManager";
+import { ScriptSegment } from "@/types/event";
+import useAudioPlayer from "@/hooks/useAudioPlayer";
 
 interface EventDashboardProps {
   segments: ScriptSegment[];
@@ -28,6 +32,291 @@ interface EventDashboardProps {
   onSeekTo: (segmentIndex: number) => void;
 }
 
+// Atomic component for segment badge
+const SegmentTypeBadge = ({ type }: { type: string }) => (
+  <Badge variant="outline" className="capitalize">
+    {type.replace(/_/g, " ")}
+  </Badge>
+);
+
+// Atomic component for slide indicator badge
+const SlideIndicator = () => (
+  <Badge variant="secondary" className="flex items-center gap-1">
+    <Presentation className="h-3 w-3" />
+    Slide
+  </Badge>
+);
+
+// Atomic component for time display
+const TimeDisplay = ({ time, label }: { time: string; label?: string }) => (
+  <div className="bg-primary/10 px-2 py-1 rounded-md text-primary-foreground text-sm">
+    {time}
+    {label && (
+      <span className="text-xs text-muted-foreground ml-1">{label}</span>
+    )}
+  </div>
+);
+
+// Atomic component for segment progress
+const SegmentProgressBar = ({ progress }: { progress: number }) => (
+  <div className="h-1 w-full bg-muted">
+    <div
+      className="h-full bg-primary transition-all duration-300 ease-in-out"
+      style={{ width: `${progress}%` }}
+    />
+  </div>
+);
+
+// Extended ScriptSegment type to include audio property
+interface ExtendedScriptSegment extends ScriptSegment {
+  audio?: string | null; // Some segments might have direct audio URLs
+}
+
+// Atomic component for audio control with player
+const AudioSegmentPreview = ({
+  segment,
+  onPlaySegment,
+}: {
+  segment: ExtendedScriptSegment;
+  onPlaySegment: (segment: ExtendedScriptSegment) => void;
+}) => {
+  // Use the same hook that SimpleAudioPlayer uses for consistent behavior
+  const { isPlaying, isLoadingUrl, togglePlay, audioInitialized } =
+    useAudioPlayer({
+      // Pass the audio_url as the S3 key
+      audioS3key: segment.audio_url || null,
+      // Also pass any direct audio URL if available
+      initialUrl: segment.audio || null,
+    });
+
+  const handlePlayClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent triggering the parent onClick
+
+    // Set this segment as the active audio segment
+    onPlaySegment(segment);
+
+    // Toggle play state
+    togglePlay();
+  };
+
+  // No audio available
+  if (!segment.audio_url && !segment.audio) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-2 text-xs opacity-50"
+        disabled
+      >
+        <VolumeX className="h-3 w-3 mr-1" />
+        No audio
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-6 px-2 text-xs text-primary hover:text-primary"
+      onClick={handlePlayClick}
+      disabled={isLoadingUrl || !audioInitialized}
+    >
+      {isLoadingUrl ? (
+        <>
+          <RefreshCcw className="h-3 w-3 mr-1 animate-spin" />
+          Loading...
+        </>
+      ) : isPlaying ? (
+        <>
+          <Pause className="h-3 w-3 mr-1" />
+          Pause
+        </>
+      ) : (
+        <>
+          <Volume2 className="h-3 w-3 mr-1" />
+          Play
+        </>
+      )}
+    </Button>
+  );
+};
+
+// Simple mini player that shows at the bottom of the dashboard
+const MiniPlayer = ({
+  segment,
+  onClose,
+  onSegmentEnd,
+  isRunning,
+}: {
+  segment: ExtendedScriptSegment | null;
+  onClose?: () => void;
+  onSegmentEnd?: () => void;
+  isRunning?: boolean;
+}) => {
+  // If no segment is selected, don't show the player
+  if (!segment) return null;
+
+  // Use the audio player hook
+  const {
+    isPlaying,
+    isLoadingUrl,
+    togglePlay,
+    currentTime,
+    duration,
+    formatTime,
+    handleSeek,
+    skipForward,
+    skipBackward,
+    audioInitialized,
+    audioRef,
+  } = useAudioPlayer({
+    audioS3key: segment.audio_url || null,
+    initialUrl: segment.audio || null,
+  });
+
+  // Use a ref to track if we've already auto-played
+  const hasAutoPlayedRef = useRef(false);
+
+  // Track if we've already triggered the onSegmentEnd callback
+  const hasTriggeredEndRef = useRef(false);
+
+  // Auto-play the audio when the component mounts
+  useEffect(() => {
+    // Only auto-play once when the audio is initialized
+    if (
+      audioInitialized &&
+      !isPlaying &&
+      !isLoadingUrl &&
+      !hasAutoPlayedRef.current
+    ) {
+      // Only log once
+      hasAutoPlayedRef.current = true;
+      togglePlay();
+    }
+  }, [audioInitialized, isPlaying, isLoadingUrl, togglePlay]);
+
+  // Add an event listener to detect when audio playback ends
+  useEffect(() => {
+    // Reset the triggered flag when the segment changes
+    hasTriggeredEndRef.current = false;
+
+    // Only add the event listener if we have a valid audio element and the event is running
+    if (!audioRef.current || !isRunning) return;
+
+    const handleAudioEnd = () => {
+      console.log("Audio playback ended for segment:", segment.id);
+
+      // Only trigger the callback once per segment
+      if (!hasTriggeredEndRef.current && onSegmentEnd) {
+        hasTriggeredEndRef.current = true;
+        onSegmentEnd();
+      }
+    };
+
+    // Add the event listener
+    audioRef.current.addEventListener("ended", handleAudioEnd);
+
+    // Clean up the event listener when the component unmounts
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.removeEventListener("ended", handleAudioEnd);
+      }
+    };
+  }, [segment.id, audioRef, onSegmentEnd, isRunning]);
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 bg-background border-t p-2 flex items-center gap-3 z-50 shadow-lg">
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 w-8 rounded-full p-0"
+          onClick={skipBackward}
+          disabled={isLoadingUrl || !audioInitialized}
+        >
+          <SkipBack className="h-3 w-3" />
+        </Button>
+
+        <Button
+          size="sm"
+          variant="default"
+          className="h-9 w-9 rounded-full p-0"
+          onClick={togglePlay}
+          disabled={isLoadingUrl || !audioInitialized}
+        >
+          {isLoadingUrl ? (
+            <RefreshCcw className="h-4 w-4 animate-spin" />
+          ) : isPlaying ? (
+            <Pause className="h-4 w-4" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
+        </Button>
+
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 w-8 rounded-full p-0"
+          onClick={skipForward}
+          disabled={isLoadingUrl || !audioInitialized}
+        >
+          <SkipForward className="h-3 w-3" />
+        </Button>
+      </div>
+
+      <div className="text-xs font-medium truncate max-w-[150px]">
+        {segment.content
+          ? segment.content.substring(0, 50) + "..."
+          : "Segment " + segment.id}
+      </div>
+
+      <div className="flex-1 flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">
+          {formatTime(currentTime)}
+        </span>
+        <div className="flex-1">
+          <Slider
+            value={[currentTime]}
+            max={duration || 100}
+            step={0.1}
+            onValueChange={handleSeek}
+            disabled={!audioInitialized}
+            className="cursor-pointer"
+          />
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {formatTime(duration)}
+        </span>
+      </div>
+
+      {onClose && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 w-8 rounded-full p-0 ml-2"
+          onClick={onClose}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </Button>
+      )}
+    </div>
+  );
+};
+
 export default function EventDashboard({
   segments,
   isRunning,
@@ -39,11 +328,18 @@ export default function EventDashboard({
   onNextSegment,
   onSeekTo,
 }: EventDashboardProps) {
+  const [activeAudioSegment, setActiveAudioSegment] =
+    useState<ExtendedScriptSegment | null>(null);
   const [timeDisplay, setTimeDisplay] = useState({
     elapsed: "0:00",
     remaining: "0:00",
     total: "0:00",
   });
+
+  const [sortedSegments, setSortedSegments] = useState<ExtendedScriptSegment[]>(
+    [...segments].sort((a, b) => a.order - b.order)
+  );
+  const [sortedCurrentIndex, setSortedCurrentIndex] = useState<number>(0);
 
   // Format times whenever timeElapsed or totalDuration changes
   useEffect(() => {
@@ -53,6 +349,70 @@ export default function EventDashboard({
       total: formatTime(totalDuration),
     });
   }, [timeElapsed, totalDuration]);
+
+  // Use a ref to track the last segment ID to avoid unnecessary updates
+  const lastPlayedSegmentIdRef = useRef<number | null>(null);
+
+  // Play the current segment's audio when the event is running or the current segment changes
+  useEffect(() => {
+    // When event is paused, close the audio player
+    if (!isRunning) {
+      if (activeAudioSegment) {
+        setActiveAudioSegment(null);
+      }
+      // Reset the last played segment ID
+      lastPlayedSegmentIdRef.current = null;
+      return;
+    }
+
+    // Skip if we don't have valid segments or index
+    if (sortedSegments.length === 0 || sortedCurrentIndex < 0) {
+      return;
+    }
+
+    const currentSegment = sortedSegments[sortedCurrentIndex];
+
+    // Skip if we don't have a valid segment
+    if (!currentSegment) {
+      return;
+    }
+
+    // Skip if this segment doesn't have audio
+    if (!currentSegment.audio_url) {
+      // If we were playing something before, stop it
+      if (activeAudioSegment) {
+        setActiveAudioSegment(null);
+      }
+      // Reset the last played segment ID
+      lastPlayedSegmentIdRef.current = null;
+
+      // If this segment doesn't have audio, automatically advance to the next segment
+      // after a short delay to prevent rapid advancement through multiple segments without audio
+      if (sortedCurrentIndex < sortedSegments.length - 1) {
+        console.log(
+          `Segment ${currentSegment.id} has no audio, advancing to next segment after delay`
+        );
+        const timer = setTimeout(() => {
+          onNextSegment();
+        }, 1000);
+        return () => clearTimeout(timer);
+      }
+      return;
+    }
+
+    // Skip if we're already playing this segment
+    if (lastPlayedSegmentIdRef.current === currentSegment.id) {
+      return;
+    }
+
+    // Update the last played segment ID
+    lastPlayedSegmentIdRef.current = currentSegment.id;
+
+    console.log(`Setting active audio segment: ${currentSegment.id}`);
+
+    // Set the active audio segment - this will trigger the MiniPlayer to show and play
+    setActiveAudioSegment(currentSegment as ExtendedScriptSegment);
+  }, [isRunning, sortedCurrentIndex, sortedSegments, activeAudioSegment]);
 
   // Format time to MM:SS
   const formatTime = (seconds: number) => {
@@ -72,8 +432,8 @@ export default function EventDashboard({
 
   // Calculate percentage progress to segment
   const getSegmentProgress = (index: number): number => {
-    if (index < currentSegmentIndex) return 100;
-    if (index > currentSegmentIndex) return 0;
+    if (index < sortedCurrentIndex) return 100;
+    if (index > sortedCurrentIndex) return 0;
 
     // For current segment
     const segmentStartTime = getSegmentStartTime(currentSegmentIndex);
@@ -84,209 +444,268 @@ export default function EventDashboard({
     return Math.min(100, (segmentElapsed / segmentDuration) * 100);
   };
 
+  // Handle advancing to the next segment when audio playback ends
+  const handleSegmentEnd = useCallback(() => {
+    if (!isRunning) return;
+
+    console.log("Handling segment end, advancing to next segment");
+
+    // Check if we have a next segment
+    if (sortedCurrentIndex < sortedSegments.length - 1) {
+      // Find the next segment in the sorted array
+      const nextSegmentId = sortedSegments[sortedCurrentIndex + 1].id;
+
+      // Find the index of this segment in the original array
+      const nextSegmentIndex = segments.findIndex(
+        (s) => s.id === nextSegmentId
+      );
+
+      if (nextSegmentIndex >= 0) {
+        console.log(
+          `Advancing to next segment: ${nextSegmentId} (index ${nextSegmentIndex})`
+        );
+        onNextSegment();
+      }
+    } else {
+      console.log("Reached the end of all segments");
+      // Optionally stop the event when all segments have played
+      // onPlayPause();
+    }
+  }, [isRunning, sortedCurrentIndex, sortedSegments, segments, onNextSegment]);
+
   return (
-    <Card className="md:col-span-2">
-      <CardHeader className="bg-primary/5">
-        <CardTitle className="flex justify-between items-center">
-          <span>Event Control Panel</span>
-          {isRunning ? (
-            <Badge className="bg-green-500 animate-pulse">LIVE</Badge>
-          ) : (
-            <Badge variant="outline">Ready</Badge>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="pt-6 space-y-6">
-        {/* Current Script Display */}
-        {segments.length > 0 ? (
-          <div
-            className={`p-4 border-2 rounded-md ${
-              isRunning ? "border-green-500 bg-green-50" : "border-primary/20"
-            }`}
-          >
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="font-medium">
-                {isRunning ? "NOW PLAYING" : "Ready to Start"}
-              </h3>
-              <div className="text-sm">
-                Segment {currentSegmentIndex + 1} of {segments.length}
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-md shadow-sm mb-3">
-              <div className="flex items-start gap-2 mb-2">
-                <Badge variant="outline" className="capitalize mt-1">
-                  {segments[currentSegmentIndex]?.type || "segment"}
-                </Badge>
-                {segments[currentSegmentIndex]?.presentationSlide && (
-                  <Badge
-                    variant="secondary"
-                    className="flex items-center gap-1 mt-1"
-                  >
-                    <Presentation className="h-3 w-3" />
-                    Slide
-                  </Badge>
-                )}
-              </div>
-              <p className="text-lg font-medium">
-                {segments[currentSegmentIndex]?.content ||
-                  "No content available"}
-              </p>
-            </div>
-
-            <div className="flex justify-between items-center">
-              <div className="text-sm flex items-center gap-2">
-                <div className="bg-primary/10 px-2 py-1 rounded-md">
-                  {timeDisplay.elapsed} / {timeDisplay.total}
+    <>
+      <Card className="md:col-span-2">
+        <CardHeader className="bg-primary/5 pb-3">
+          <CardTitle className="flex justify-between items-center text-primary">
+            <span>Event Control Panel</span>
+            {isRunning ? (
+              <Badge className="bg-green-500 hover:bg-green-600 animate-pulse">
+                LIVE
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-primary border-primary">
+                Ready
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4 space-y-4">
+          {/* Current Script Display */}
+          {sortedSegments.length > 0 ? (
+            <div
+              className={`p-4 border-2 rounded-md ${
+                isRunning
+                  ? "border-green-500 bg-green-50/50 dark:bg-green-950/10"
+                  : "border-primary/20"
+              }`}
+            >
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="font-medium text-primary">
+                  {isRunning ? "NOW PLAYING" : "Ready to Start"}
+                </h3>
+                <div className="text-sm text-primary/70">
+                  Segment {sortedSegments[sortedCurrentIndex]?.order || 1} of{" "}
+                  {sortedSegments.length}
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  Remaining: {timeDisplay.remaining}
-                </span>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={onPrevSegment}
-                  disabled={!isRunning || currentSegmentIndex === 0}
-                >
-                  <SkipBack className="h-4 w-4 mr-1" />
-                  Previous
-                </Button>
-                <Button
-                  size="sm"
-                  className={
-                    isRunning
-                      ? "bg-red-500 hover:bg-red-600"
-                      : "bg-cta hover:bg-cta/90"
-                  }
-                  onClick={onPlayPause}
-                >
-                  {isRunning ? (
-                    <>
-                      <Pause className="h-4 w-4 mr-1" />
-                      Pause
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-1" />
-                      Start
-                    </>
+
+              <div className="bg-white dark:bg-gray-800 p-4 rounded-md shadow-sm mb-3">
+                <div className="flex items-start gap-2 mb-2">
+                  <SegmentTypeBadge
+                    type={sortedSegments[sortedCurrentIndex]?.type || "segment"}
+                  />
+                  {sortedSegments[sortedCurrentIndex]?.presentationSlide && (
+                    <SlideIndicator />
                   )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={onNextSegment}
-                  disabled={
-                    !isRunning || currentSegmentIndex >= segments.length - 1
-                  }
-                >
-                  <SkipForward className="h-4 w-4 mr-1" />
-                  Next
-                </Button>
+                </div>
+                <p className="text-lg font-medium text-primary-foreground">
+                  {sortedSegments[sortedCurrentIndex]?.content ||
+                    "No content available"}
+                </p>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <TimeDisplay
+                    time={`${timeDisplay.elapsed} / ${timeDisplay.total}`}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    Remaining: {timeDisplay.remaining}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onPrevSegment}
+                    disabled={!isRunning || currentSegmentIndex === 0}
+                    className="border-primary/30 text-primary hover:text-primary hover:bg-primary/10"
+                  >
+                    <SkipBack className="h-4 w-4 mr-1" />
+                    Previous
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={
+                      isRunning
+                        ? "bg-red-500 hover:bg-red-600 text-white"
+                        : "bg-primary hover:bg-primary/90 text-primary-foreground"
+                    }
+                    onClick={onPlayPause}
+                    disabled={segments.length === 0 || totalDuration === 0}
+                  >
+                    {isRunning ? (
+                      <>
+                        <Pause className="h-4 w-4 mr-1" />
+                        Pause
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-1" />
+                        Start
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onNextSegment}
+                    disabled={
+                      !isRunning || currentSegmentIndex >= segments.length - 1
+                    }
+                    className="border-primary/30 text-primary hover:text-primary hover:bg-primary/10"
+                  >
+                    <SkipForward className="h-4 w-4 mr-1" />
+                    Next
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="text-center border-2 border-dashed rounded-md p-6">
-            <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-3" />
-            <h3 className="text-lg font-medium mb-2">No Script Segments</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Add script segments before starting your event
-            </p>
-            <Button variant="outline" className="flex items-center gap-1">
-              <RefreshCcw className="h-4 w-4" />
-              Refresh
-            </Button>
-          </div>
-        )}
-
-        {/* Progress bar */}
-        {segments.length > 0 && (
-          <div>
-            <Progress
-              value={(timeElapsed / totalDuration) * 100}
-              className="h-2"
-            />
-            <div className="flex justify-between text-xs mt-1">
-              <span className="text-muted-foreground">Start</span>
-              <span className="text-muted-foreground">End</span>
+          ) : (
+            <div className="text-center border-2 border-dashed rounded-md p-6 border-primary/20">
+              <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-3" />
+              <h3 className="text-lg font-medium mb-2 text-primary">
+                No Script Segments
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Add script segments before starting your event
+              </p>
+              <Button
+                variant="outline"
+                className="flex items-center gap-1 border-primary/30 text-primary hover:text-primary hover:bg-primary/10"
+              >
+                <RefreshCcw className="h-4 w-4" />
+                Refresh
+              </Button>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Upcoming segments */}
-        {segments.length > 0 && (
-          <div>
-            <h3 className="text-sm font-medium mb-2">All Segments</h3>
-            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-              {segments.map((segment, index) => (
-                <div
-                  key={segment.id}
-                  className={`border rounded-md ${
-                    index === currentSegmentIndex
-                      ? "border-primary bg-primary/5"
-                      : ""
-                  }`}
-                >
-                  <div className="p-2 flex justify-between items-center">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 rounded-full">
-                          {index + 1}
-                        </span>
-                        <span className="text-xs text-primary-foreground/60 capitalize">
-                          {segment.type}
-                        </span>
-                        {segment.presentationSlide && (
-                          <Badge
-                            variant="outline"
-                            className="text-xs flex items-center gap-1"
-                          >
-                            <Presentation className="h-3 w-3" />
-                            Slide
-                          </Badge>
-                        )}
-                        {segment.status === "generated" && (
-                          <CheckCircle className="h-3 w-3 text-green-500" />
-                        )}
+          {/* Progress bar */}
+          {sortedSegments.length > 0 && (
+            <div>
+              <Progress
+                value={(timeElapsed / totalDuration) * 100}
+                className="h-2 bg-muted"
+              />
+              <div className="flex justify-between text-xs mt-1">
+                <span className="text-muted-foreground">Start</span>
+                <span className="text-muted-foreground">End</span>
+              </div>
+            </div>
+          )}
+
+          {/* Upcoming segments */}
+          {sortedSegments.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium mb-2 text-primary">
+                All Segments
+              </h3>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                {sortedSegments.map((segment, index) => (
+                  <div
+                    key={segment.id}
+                    className={`border rounded-md transition-all ${
+                      index === sortedCurrentIndex
+                        ? "border-primary bg-primary/5"
+                        : "hover:border-primary/50"
+                    }`}
+                  >
+                    <div className="p-2 flex justify-between items-center">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full">
+                            {segment.order}
+                          </span>
+                          <span className="text-xs text-primary-foreground/70 capitalize">
+                            {segment.type}
+                          </span>
+                          {segment.presentationSlide && (
+                            <Badge
+                              variant="outline"
+                              className="text-xs flex items-center gap-1 border-primary/30"
+                            >
+                              <Presentation className="h-3 w-3" />
+                              Slide
+                            </Badge>
+                          )}
+                          {segment.status === "generated" && (
+                            <CheckCircle className="h-3 w-3 text-green-500" />
+                          )}
+                        </div>
+                        <p className="text-sm truncate max-w-[300px] text-primary-foreground">
+                          {segment.content}
+                        </p>
                       </div>
-                      <p className="text-sm truncate max-w-[300px]">
-                        {segment.content}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <Badge
-                        variant="outline"
-                        className="whitespace-nowrap text-xs"
-                      >
-                        {segment.timing ? formatTime(segment.timing) : "0:00"}
-                      </Badge>
-                      {index !== currentSegmentIndex && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-xs"
-                          onClick={() => onSeekTo(index)}
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge
+                          variant="outline"
+                          className="whitespace-nowrap text-xs border-primary/30 text-primary"
                         >
-                          Jump to
-                        </Button>
-                      )}
+                          {segment.timing ? formatTime(segment.timing) : "0:00"}
+                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <AudioSegmentPreview
+                            segment={segment as ExtendedScriptSegment}
+                            onPlaySegment={setActiveAudioSegment}
+                          />
+                          {index !== sortedCurrentIndex && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10"
+                              onClick={() => {
+                                // Find the original index of this segment
+                                const originalIndex = segments.findIndex(
+                                  (s) => s.id === segment.id
+                                );
+                                onSeekTo(originalIndex);
+                              }}
+                            >
+                              Jump to
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
+                    <SegmentProgressBar progress={getSegmentProgress(index)} />
                   </div>
-                  <div className="h-1 w-full bg-gray-100">
-                    <div
-                      className="h-full bg-primary transition-all duration-300 ease-in-out"
-                      style={{ width: `${getSegmentProgress(index)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Show the mini player when a segment is selected for playback */}
+      {activeAudioSegment && (
+        <MiniPlayer
+          segment={activeAudioSegment}
+          onClose={() => setActiveAudioSegment(null)}
+          onSegmentEnd={handleSegmentEnd}
+          isRunning={isRunning}
+        />
+      )}
+    </>
   );
 }

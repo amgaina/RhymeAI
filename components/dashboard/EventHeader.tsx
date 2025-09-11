@@ -1,6 +1,14 @@
 "use client";
 import { Button } from "@/components/ui/button";
-import { Calendar, Edit, Pause, Play } from "lucide-react";
+import {
+  Calendar,
+  Edit,
+  Pause,
+  Play,
+  ArrowRight,
+  LayoutTemplate,
+  FileText,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface EventHeaderProps {
@@ -9,9 +17,13 @@ interface EventHeaderProps {
   eventType: string;
   isRunning: boolean;
   isReady: boolean;
+  status: string;
   onBack: () => void;
   onToggleRunning: () => void;
   onEdit: () => void;
+  onContinueSetup?: () => void;
+  onGenerateLayout?: () => void;
+  onGenerateScript?: () => void;
 }
 
 export function EventHeader({
@@ -20,9 +32,13 @@ export function EventHeader({
   eventType,
   isRunning,
   isReady,
+  status,
   onBack,
   onToggleRunning,
   onEdit,
+  onContinueSetup,
+  onGenerateLayout,
+  onGenerateScript,
 }: EventHeaderProps) {
   return (
     <div className="flex justify-between items-center mb-4">
@@ -48,6 +64,7 @@ export function EventHeader({
           <Edit className="h-4 w-4" />
           Edit Event
         </Button>
+        {/* Show different action buttons based on event status */}
         {isReady && (
           <Button
             className={`flex items-center gap-2 ${
@@ -68,6 +85,39 @@ export function EventHeader({
                 Start Event
               </>
             )}
+          </Button>
+        )}
+
+        {/* Show continue setup button for draft events */}
+        {status === "draft" && onContinueSetup && (
+          <Button
+            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600"
+            onClick={onContinueSetup}
+          >
+            <ArrowRight className="h-4 w-4" />
+            Continue Setup
+          </Button>
+        )}
+
+        {/* Show generate layout button */}
+        {status === "layout_pending" && onGenerateLayout && (
+          <Button
+            className="flex items-center gap-2 bg-purple-500 hover:bg-purple-600"
+            onClick={onGenerateLayout}
+          >
+            <LayoutTemplate className="h-4 w-4" />
+            Generate Layout
+          </Button>
+        )}
+
+        {/* Show generate script button */}
+        {status === "script_pending" && onGenerateScript && (
+          <Button
+            className="flex items-center gap-2 bg-green-500 hover:bg-green-600"
+            onClick={onGenerateScript}
+          >
+            <FileText className="h-4 w-4" />
+            Generate Script
           </Button>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { mapVoiceParams } from "@/lib/tts-utils";
+import { applyVoiceParams } from "@/lib/tts-utils";
 
 // This would be replaced with your actual TTS API integration
 async function generateTTS(
@@ -55,11 +55,12 @@ export async function POST(req: Request) {
       );
     }
 
-    // Map the voice parameters to a specific voice ID for your TTS provider
-    const voiceId = mapVoiceParams(voiceParams);
+    // Apply voice parameters to SSML - corrected to pass both required arguments
+    const processedSsml = applyVoiceParams(ssml, voiceParams || {});
 
     // Generate the audio using the TTS service
-    const audioBuffer = await generateTTS(ssml, voiceId);
+    // Use a default voice ID since voiceParams are now applied to SSML
+    const audioBuffer = await generateTTS(processedSsml, "default-voice-id");
 
     // Return the audio data
     return new Response(audioBuffer, {

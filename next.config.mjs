@@ -40,6 +40,21 @@ const nextConfig = {
 
     return config;
   },
+  images: {
+    domains: ["i.ibb.co", "ibb.co"],
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "i.ibb.co",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "ibb.co",
+        pathname: "/**",
+      },
+    ],
+  },
 };
 
 if (userConfig) {

@@ -18,22 +18,10 @@ import {
   AlertTriangle,
   Play,
 } from "lucide-react";
-import { ScriptSegment } from "./ScriptManager";
+import { EventData } from "@/app/actions/event";
 
 interface EventOverviewProps {
-  event: {
-    id: string;
-    name: string;
-    type: string;
-    date: string;
-    location: string;
-    description: string;
-    voiceSettings: {
-      type: string;
-      language: string;
-    };
-    scriptSegments: ScriptSegment[];
-  };
+  event: EventData;
   totalDuration: number;
   onNavigateToTab: (tabId: string) => void;
   onPlayAudio?: (audioUrl: string) => void;
@@ -212,14 +200,12 @@ export default function EventOverview({
                       Duration:{" "}
                       {segment.timing ? formatTime(segment.timing) : "N/A"}
                     </span>
-                    {segment.audio && (
+                    {segment.audio && onPlayAudio && (
                       <Button
                         size="sm"
                         variant="ghost"
                         className="h-8 flex items-center gap-1"
-                        onClick={() =>
-                          onPlayAudio && onPlayAudio(segment.audio!)
-                        }
+                        onClick={() => onPlayAudio(segment.audio!)}
                       >
                         <Play className="h-3 w-3" />
                         Play
